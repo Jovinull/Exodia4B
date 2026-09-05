@@ -52,7 +52,7 @@ def main() -> int:
 
         act = Actuator(b, RAM)
         act.wait_for_idle()
-        act.close_overlay()
+        act.recover()
         act.open_hand()
         act.wait_for_idle(stable_for=20)
 

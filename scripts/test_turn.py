@@ -64,7 +64,7 @@ def main() -> int:
             print(f"LP {g.lp_player} x {g.lp_opponent} | "
                   f"mao {len(g.hand)} | campo {len(g.field)} | "
                   f"campo_op {len(g.opponent_field)} | "
-                  f"overlay {int(act.overlay_open())}")
+                  f"cursor_na_mao {int(act.cursor_on_hand())}")
 
             act.open_hand()
             act.wait_for_idle()

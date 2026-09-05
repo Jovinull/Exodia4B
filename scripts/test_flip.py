@@ -78,7 +78,7 @@ def main() -> int:
                 flip_button=("right" if seta == "nenhuma" else seta),
             )
             # le SEMPRE na visao de campo
-            act.close_overlay()
+            act.recover()
             act.wait_for_idle(stable_for=30)
             s = st.read(b, RAM)
             posto = [r for r in s.field if r.card_id == alvo.card_id]

@@ -75,7 +75,7 @@ def main() -> int:
         g = st.read(b, RAM)
         print(f"\nsavestate gravado: {destino.name} "
               f"({destino.stat().st_size if destino.exists() else 0} bytes)")
-        print(f"sobreposicao aberta: {int(act.overlay_open())}")
+        print(f"cursor na mao: {int(act.cursor_on_hand())}")
         print()
         print(g.render())
         b.screenshot(str(out / f"{args.save}.png"))

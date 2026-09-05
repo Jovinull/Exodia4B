@@ -85,8 +85,15 @@ def legal_actions(state: GameState,
             continue
         ca = cards.get(a.card_id)
         nome_a = ca.name if ca else f"id {a.card_id}"
-        if state.opponent_field:
-            for alvo_slot, alvo in enumerate(state.opponent_field):
+        # So MONSTRO e alvo de ataque. Magia e armadilha ocupam o campo do
+        # oponente e apareciam na lista como alvo com "(0/0)" - uma acao que o
+        # jogo nunca ia aceitar, e que o modelo escolhia justamente por parecer
+        # o alvo mais fraco da mesa. Sem monstro do outro lado, o ataque vai
+        # direto nos LP, mesmo que haja magias no campo dele.
+        alvos = [(i, r) for i, r in enumerate(state.opponent_field)
+                 if (c := cards.get(r.card_id)) and c.is_monster]
+        if alvos:
+            for alvo_slot, alvo in alvos:
                 ct = cards.get(alvo.card_id)
                 nome_t = (f"{ct.name} ({ct.attack}/{ct.defense})" if ct
                           else f"id {alvo.card_id}")

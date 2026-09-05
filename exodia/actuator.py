@@ -184,4 +184,34 @@ class Actuator:
         self.confirm()
         self.wait_for_idle(stable_for=30)
 
-        return len(_st.read(self.bridge, self.domain).field) > antes
+        # Criterio de sucesso semantico: a carta saiu da mao E esta no campo.
+        #
+        # Contar so o tamanho do campo nao serve, porque a flag de campo liga
+        # assim que a carta e POSICIONADA, antes de a guardian star ser
+        # escolhida - o que dava a invocacao como pronta com o prompt ainda
+        # aberto. Checar a sobreposicao tambem nao serve, porque depois de
+        # invocar o jogo volta para a visao da mao, e a sobreposicao continua
+        # legitimamente aberta.
+        depois = _st.read(self.bridge, self.domain)
+        no_campo = any(r.card_id == card_id for r in depois.field)
+        saiu_da_mao = not any(r.card_id == card_id for r in depois.hand)
+        return no_campo and saiu_da_mao and len(depois.field) > antes
+
+    # ---------------------------------------------------------- sobreposicao
+
+    def overlay_open(self) -> bool:
+        """True enquanto houver visao de mao ou prompt na tela."""
+        from .state import OVERLAY_OPEN
+        return bool(self.bridge.read_u8(OVERLAY_OPEN, self.domain))
+
+    def wait_overlay_closed(self, timeout_frames: int | None = None) -> bool:
+        """Espera voltar para a visao de campo limpa."""
+        from .state import OVERLAY_OPEN
+        budget = timeout_frames or self.max_wait_frames
+        waited = 0
+        while waited < budget:
+            if not self.bridge.read_u8(OVERLAY_OPEN, self.domain):
+                return True
+            self.bridge.frame_advance(self.settle_frames)
+            waited += self.settle_frames
+        return False

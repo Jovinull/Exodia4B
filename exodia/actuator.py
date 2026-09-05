@@ -141,3 +141,47 @@ class Actuator:
         """Start abre a visao da mao durante o duelo."""
         self.bridge.press("start", 4)
         self.bridge.frame_advance(self.settle_frames * 6)
+
+    # ------------------------------------------------------------- invocacao
+
+    def summon(self, card_id: int, valid_ids: "set[int] | None" = None,
+               guardian_star: str = "a", slot_moves: int = 0) -> bool:
+        """Invoca uma carta da mao. Devolve True se ela chegou ao campo.
+
+        Fluxo do jogo, mapeado por screenshot:
+            1. cursor na carta       (right/left na visao da mao)
+            2. cross                 -> seleciona a carta
+            3. cross                 -> escolhe o slot do campo
+            4. cross                 -> escolhe a guardian star
+
+        A tela da guardian star ("ESCOLHA O ATRIBUTO") oferece duas opcoes, na
+        ordem A e depois B da carta. `guardian_star="b"` desce uma antes de
+        confirmar. `slot_moves` desloca o slot escolhido com "right".
+
+        Nao confirma sozinho o sucesso pelo numero de passos: confere no fim se
+        alguma carta nossa ficou com a flag de campo.
+        """
+        from . import state as _st          # import tardio evita ciclo
+
+        self.wait_for_idle()
+        if not self.move_cursor_to_card(card_id, valid_ids=valid_ids):
+            return False
+
+        antes = len(_st.read(self.bridge, self.domain).field)
+
+        self.confirm()                      # 1. seleciona a carta
+        self.wait_for_idle(stable_for=20)
+
+        for _ in range(slot_moves):         # 2. desloca o slot, se pedido
+            self.bridge.press("right", 3)
+            self.bridge.frame_advance(self.settle_frames * 2)
+        self.confirm()                      # confirma o slot
+        self.wait_for_idle(stable_for=20)
+
+        if guardian_star.lower() == "b":    # 3. escolhe a estrela
+            self.bridge.press("down", 3)
+            self.bridge.frame_advance(self.settle_frames * 2)
+        self.confirm()
+        self.wait_for_idle(stable_for=30)
+
+        return len(_st.read(self.bridge, self.domain).field) > antes

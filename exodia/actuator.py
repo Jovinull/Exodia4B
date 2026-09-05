@@ -146,7 +146,7 @@ class Actuator:
 
     def summon(self, card_id: int, valid_ids: "set[int] | None" = None,
                guardian_star: str = "a", slot_moves: int = 0,
-               max_prompts: int = 5) -> bool:
+               max_prompts: int = 5, face_up: bool = True) -> bool:
         """Invoca uma carta da mao. Devolve True se ela chegou ao campo.
 
         Fluxo do jogo, mapeado por screenshot:
@@ -174,6 +174,13 @@ class Actuator:
 
         self.confirm()                       # seleciona a carta
         self.wait_for_idle(stable_for=20)
+
+        # A carta comeca VIRADA PARA BAIXO. Uma seta para qualquer lado a
+        # desvira. Sem este passo o monstro entra de costas e nao pode atacar -
+        # foi o que fez o agente encher o campo de cartas inuteis.
+        if face_up:
+            self.bridge.press("right", 3)
+            self.bridge.frame_advance(self.settle_frames * 3)
 
         for _ in range(slot_moves):          # desloca o slot, se pedido
             self.bridge.press("right", 3)

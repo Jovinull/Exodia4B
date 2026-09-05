@@ -133,6 +133,43 @@ class Actuator:
                 return False          # cursor travou
         return self.cursor_card() == target_id
 
+    def home_cursor(self, max_steps: int = 8) -> int:
+        """Leva o cursor ate a extremidade esquerda e devolve a carta de la.
+
+        Existe porque endereçar o cursor por ID de carta e ambiguo: a mesma
+        carta pode estar na mao e no campo, e o deck tem copias repetidas -
+        foi o que fez o agente selecionar a carta errada e travar.
+
+        A posicao do cursor NAO esta na RAM que ja mapeamos: a busca por um
+        indice de slot na faixa 0x09B000 so encontrou contador de animacao,
+        ruido de PRNG e o piscar do cursor. Entao a posicao e obtida por
+        navegacao: encosta na ponta, e a partir dai conta passos.
+
+        Para na borda quando um "left" nao muda mais a carta sob o cursor.
+        """
+        anterior = self.cursor_card()
+        for _ in range(max_steps):
+            if not self.press_until_change("left", SELECTED_CARD):
+                return anterior          # nao mudou: e a borda
+            atual = self.cursor_card()
+            if atual == anterior:
+                return atual
+            anterior = atual
+        return anterior
+
+    def move_cursor_to_slot(self, slot: int, max_steps: int = 8) -> bool:
+        """Posiciona o cursor no slot `slot`, contado a partir da esquerda.
+
+        Diferente de mirar por ID, isto distingue duas copias da mesma carta -
+        o que a fusao vai exigir.
+        """
+        self.wait_for_idle()
+        self.home_cursor(max_steps)
+        for _ in range(slot):
+            if not self.press_until_change("right", SELECTED_CARD):
+                return False             # acabou a fileira antes do slot
+        return True
+
     def confirm(self) -> None:
         self.bridge.press("cross", 3)
         self.bridge.frame_advance(self.settle_frames * 2)

@@ -66,7 +66,9 @@ def legal_actions(state: GameState) -> list[Action]:
     # certos momentos do nosso turno. Enquanto o fluxo de ataque nao esta
     # confirmado, oferecem-se todos os monstros do campo e deixa-se o atuador
     # medir se o ataque aconteceu de fato.
-    atacantes = [r for r in state.field if r.can_act] or list(state.field)
+    # Carta virada para baixo nao ataca, entao nem entra como atacante.
+    de_frente = [r for r in state.field if not r.face_down]
+    atacantes = [r for r in de_frente if r.can_act] or de_frente
     inimigos = state.opponent_field
     for a in atacantes:
         ca = cards.get(a.card_id)

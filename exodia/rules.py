@@ -63,13 +63,11 @@ def legal_actions(state: GameState,
             ))
 
     # --- atacar ------------------------------------------------------------
-    # Carta virada para baixo nao ataca. Ja o bit 0x4000 NAO serve de filtro:
-    # medido, ele nao liga depois de invocar, nem em turnos seguintes, e usa-lo
-    # como condicao deixava o agente sem oferecer nenhum ataque o duelo
-    # inteiro. Quem evita a repeticao inutil agora e a memoria de turno do
-    # agente, que descarta o atacante que ja falhou.
-    de_frente = [r for r in state.field if not r.face_down]
-    atacantes = [r for r in de_frente if r.card_id not in (excluir or ())]
+    # Pode atacar quem esta de frente e ainda NAO atacou neste turno. O bit
+    # 0x4000 marca "ja atacou" - eu o lia como "pode agir", exatamente ao
+    # contrario, e por isso o filtro descartava os monstros certos.
+    atacantes = [r for r in state.field
+                 if r.can_attack and r.card_id not in (excluir or ())]
     inimigos = state.opponent_field
     for a in atacantes:
         ca = cards.get(a.card_id)

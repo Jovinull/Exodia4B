@@ -76,8 +76,8 @@ class RandomAgent:
             r = meu[0]
             if r.face_down:
                 return "atacante virado para baixo"
-            if not r.can_act:
-                return "atacante sem bit de pode-agir (talvez ja atacou)"
+            if r.has_attacked:
+                return "atacante ja atacou neste turno"
             return "sequencia de ataque"
         if a.kind == "end_turn":
             return "nada mudou no estado do oponente"

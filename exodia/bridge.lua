@@ -9,7 +9,20 @@
 -- A cada iteracao o Lua manda o resultado do comando anterior e recebe o proximo.
 -- O Python DEVE prefixar suas respostas com "<tamanho> " (exigencia do BizHawk >= 2.6.2).
 
-local POLL_TIMEOUT_MS = 50
+-- Quanto o Lua espera por um comando antes de desistir e adiantar um frame.
+--
+-- Era 50 ms, e isso fazia o jogo ANDAR SOZINHO enquanto o modelo pensava: uma
+-- inferencia de 30 s virava ~600 frames de jogo rodando sem ninguem no
+-- controle. O agente decidia sobre um estado e agia sobre outro.
+--
+-- Com 2 s o emulador fica praticamente congelado durante a inferencia - que e
+-- justamente a premissa do projeto: o jogo e por turnos e espera por nos, entao
+-- latencia custa tempo de relogio, nunca qualidade de jogo. E de quebra o
+-- BizHawk para de disputar CPU com o Ollama.
+--
+-- Nao e infinito de proposito: se o processo Python morrer, o EmuHawk volta a
+-- responder em 2 s e da para fechar a janela na mao.
+local POLL_TIMEOUT_MS = 2000
 
 comm.socketServerSetTimeout(POLL_TIMEOUT_MS)
 

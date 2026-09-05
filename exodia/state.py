@@ -71,8 +71,25 @@ OVERLAY_OPEN_ALT = 0x8009B124   # acompanhou 0x8009B0AC em todas as amostras
 #   indices 30+     = lixo/memoria nao inicializada (aparece "Blue-eyes" id=1)
 FLAG_ACTIVE = 0x8000
 FLAG_OPPONENT = 0x2000
-FLAG_ON_FIELD = 0x1000
+FLAG_ON_FIELD = 0x1000     # confiavel APENAS para o oponente
+FLAG_CAN_ACT = 0x4000      # visto nos NOSSOS monstros durante o nosso turno
+FLAG_EXTRA_0400 = 0x0400   # acompanha 0x4000 as vezes; significado incerto
 
+# Layout do array, deduzido observando uma pessoa jogar um duelo inteiro:
+#
+#   0..4    nossa MAO
+#   5..14   nosso CAMPO (slots fixos; um slot vazio simplesmente nao aparece,
+#           foi visto #5 e #7 ocupados com #6 ausente)
+#   15..29  lado do OPONENTE
+#
+# ARMADILHA: o bit 0x1000 marca campo do OPONENTE, mas NAO e ligado nos nossos
+# monstros em campo. Do nosso lado as flags oscilam entre 0x8000, 0xC000 e
+# 0xC400 conforme o monstro ainda pode agir no turno, e voltam para 0x8000
+# depois do fim de turno. Por isso o nosso campo se identifica pelo INDICE.
+#
+# Isso custou varias sessoes: enquanto o campo proprio era lido pela flag, o
+# agente enxergava "Seu campo: vazio" com dois monstros nossos em jogo.
+PLAYER_HAND_MAX = 4
 PLAYER_INDEX_MAX = 14
 LAST_VALID_INDEX = 29
 MAX_CARD_ID = 722
@@ -108,7 +125,19 @@ class CardInRecord:
 
     @property
     def on_field(self) -> bool:
-        return bool(self.flags & FLAG_ON_FIELD)
+        """Em campo.
+
+        Dois criterios porque o jogo marca os dois lados de formas diferentes:
+        do oponente pelo bit 0x1000, do nosso lado pelo indice do registro.
+        """
+        if self.is_opponent:
+            return bool(self.flags & FLAG_ON_FIELD)
+        return self.index > PLAYER_HAND_MAX
+
+    @property
+    def can_act(self) -> bool:
+        """Nosso monstro que ainda pode agir neste turno (bit 0x4000)."""
+        return bool(self.flags & FLAG_CAN_ACT)
 
     def describe(self) -> str:
         c = cards.get(self.card_id)

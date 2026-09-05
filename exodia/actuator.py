@@ -530,12 +530,31 @@ class Actuator:
         # ataque ficou sessoes inteiras sem rota da mao para o campo. So o
         # screenshot mostrou. E a mesma licao de sempre: um instrumento cego nao
         # produz ausencia de sinal, produz ausencia de medicao.
+        # A ORDEM DOS BOTOES E O SEGREDO, e errei ela na primeira versao.
+        #
+        # Da tela neutra, `left` entra na MAO e `up` entra na GRADE. E de dentro
+        # da mao o `up` nao sai mais - ela e uma fileira fechada. Entao comecar
+        # pelo `left` para "encostar na borda" prendia o cursor na mao, e todo
+        # `up` seguinte virava no-op. Era por isso que o SEGUNDO ataque do turno
+        # falhava sempre: o primeiro saia da grade (onde a invocacao deixou), o
+        # segundo comecava da neutra e caia na mao.
+        #
+        # A sequencia abaixo sai igual de qualquer uma das tres telas:
+        #     cancelar -> volta para a neutra (sem efeito de jogo)
+        #     up       -> entra na grade
+        #     left x5  -> encosta na borda esquerda da nossa fileira
+        #     right xN -> anda ate o atacante
+        # Tentativa 0 NAO cancela: logo apos invocar o jogo ja esta na grade, e
+        # cancelar dali joga o cursor para a mao - foi medido, e piorou o
+        # resultado geral. Esse e o caminho mais comum e o que mais funciona.
+        # O cancelar entra so a partir da tentativa 1, para o caso do SEGUNDO
+        # ataque do turno, em que o jogo repousa na tela neutra ou na mao.
         nossos = {r.card_id for r in antes.field}
         posicionado = False
         for tentativa in range(3):
             if tentativa:
-                # tentativa 0 assume que ja estamos na grade - e o caso logo
-                # apos invocar, que e o caminho mais comum
+                self.cancel()
+                self.bridge.frame_advance(20)
                 self.bridge.press("up", 3)
                 self.bridge.frame_advance(20)
             for _ in range(BOARD_SLOTS):

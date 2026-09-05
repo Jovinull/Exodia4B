@@ -44,11 +44,20 @@ class Action:
 
 
 def legal_actions(state: GameState,
-                  excluir: "set[int] | None" = None) -> list[Action]:
+                  excluir: "set[int] | None" = None,
+                  ja_invocou: bool = False) -> list[Action]:
     """Acoes possiveis agora.
 
     `excluir` recebe os SLOTS de campo cujo ataque ja foi recusado neste turno,
     para o agente nao insistir na mesma jogada.
+
+    `ja_invocou` diz que uma carta ja foi colocada neste turno. Em Forbidden
+    Memories so se joga UMA carta por turno - regra confirmada com o atuador
+    ja funcionando: a primeira invocacao entra, a segunda no mesmo turno e
+    recusada com o campo intacto, e a do turno seguinte entra de novo.
+    (Esta regra ja tinha sido concluida e depois RETIRADA, quando se descobriu
+    que as recusas vinham de um summon dessincronizado. Agora ela volta com
+    medicao limpa - ver Notes/16.)
     """
     acoes: list[Action] = []
     excluidos = excluir or set()
@@ -60,8 +69,11 @@ def legal_actions(state: GameState,
     #
     # Com o campo cheio a invocacao e recusada pelo jogo, entao nem entra na
     # lista - acao que sempre falha so ensina o agente a bater a cabeca.
+    # Oferecer invocacao depois de ja ter invocado nao e so inutil: cada acao
+    # impossivel custa uma inferencia inteira - dezenas de segundos de relogio -
+    # e ainda ensina o agente a bater a cabeca.
     campo_cheio = len(state.field) >= MAX_FIELD_MONSTERS
-    if not campo_cheio:
+    if not campo_cheio and not ja_invocou:
         for slot, r in enumerate(state.hand):
             c = cards.get(r.card_id)
             if not c or not c.is_monster:

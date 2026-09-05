@@ -322,6 +322,7 @@ class LLMAgent:
 
             r.turnos += 1
             falharam: set[int] = set()
+            ja_invocou = False   # so se joga UMA carta por turno
             log(f"\n--- turno {t} --- LP {gs.lp_player} x {gs.lp_opponent} | "
                 f"mao {len(gs.hand)} campo {len(gs.field)} "
                 f"campo_op {len(gs.opponent_field)}")
@@ -334,7 +335,8 @@ class LLMAgent:
                 # que "com a mao aberta o bit de ja-atacou zera" vinha da flag
                 # de sobreposicao quebrada, e nao de uma medicao.
                 gs = st.read(self.bridge, self.domain)
-                acoes = legal_actions(gs, excluir=falharam)
+                acoes = legal_actions(gs, excluir=falharam,
+                                      ja_invocou=ja_invocou)
 
                 d = self.decidir(gs, acoes, t, log=log)
                 if d.reasoning:
@@ -354,6 +356,8 @@ class LLMAgent:
                     self._repeticoes[(hash_estado(gs), d.acao.label)] += 1
                     if d.acao.kind in ("attack", "attack_direct"):
                         falharam.add(d.acao.field_slot)
+                elif d.acao.kind == "summon":
+                    ja_invocou = True
 
                 self.buffer.registrar(t, d.acao.label[:46], ok, motivo)
                 if self.caderno and d.note and self.caderno.adicionar(d.note):

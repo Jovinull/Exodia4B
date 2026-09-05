@@ -46,11 +46,17 @@ GUARDIAN_STARS_UNVERIFIED = {
 
 
 def guardian_star_label(idx: int) -> str:
-    """Rotulo seguro: mostra o indice, e o nome so como palpite."""
-    if idx == 0:
-        return "-"
-    palpite = GUARDIAN_STARS_UNVERIFIED.get(idx)
-    return f"#{idx}" + (f" (?{palpite})" if palpite else "")
+    """Rotulo seguro: SO o indice, nunca o palpite de nome.
+
+    Mostrar "(?Netuno)" ao lado do indice parecia inofensivo e nao era: o
+    agente passou a justificar a escolha pelo NOME ("Netuno da vantagem no
+    mar"), raciocinando sobre um rotulo que sabemos estar errado. Um nome
+    errado e pior que nenhum nome - inventa uma semantica que nao existe.
+
+    Quando o mapeamento indice -> nome for verificado na tela, este e o unico
+    lugar que muda.
+    """
+    return "-" if idx == 0 else f"#{idx}"
 
 
 @dataclass(frozen=True)

@@ -62,7 +62,7 @@ class RandomAgent:
                 guardian_star=a.guardian_star,
             )
         if a.kind in ("attack", "attack_direct"):
-            return self.act.attack(a.card_id, a.target_index)
+            return self.act.attack(a.card_id, a.target_card_id)
         if a.kind == "end_turn":
             return self.act.end_turn()
         return False

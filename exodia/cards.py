@@ -29,10 +29,28 @@ TYPE_NAMES = {
     20: "Magia", 21: "Armadilha", 22: "Ritual", 23: "Equipamento",
 }
 
-GUARDIAN_STARS = {
+# ATENCAO: este mapeamento NAO esta verificado.
+#
+# Ponto de dado real coletado no jogo: a carta 134 (Mystical Capture Chain)
+# tem GuardianStarA=8 e GuardianStarB=6 no banco, e a tela "ESCOLHA O ATRIBUTO"
+# oferece, nessa ordem, "Sol" e "Netuno". Ou seja 8->Sol e 6->Netuno, o que NAO
+# bate com a ordem abaixo.
+#
+# Ate coletar mais pares (indice do banco -> nome na tela) invocando monstros
+# diferentes, trate esses nomes como provisorios e prefira exibir o INDICE.
+# O agente escolhe entre a estrela A e a B da carta, entao o nome e cosmetico.
+GUARDIAN_STARS_UNVERIFIED = {
     0: "-", 1: "Mercurio", 2: "Sol", 3: "Lua", 4: "Venus", 5: "Marte",
     6: "Jupiter", 7: "Saturno", 8: "Urano", 9: "Netuno", 10: "Plutao",
 }
+
+
+def guardian_star_label(idx: int) -> str:
+    """Rotulo seguro: mostra o indice, e o nome so como palpite."""
+    if idx == 0:
+        return "-"
+    palpite = GUARDIAN_STARS_UNVERIFIED.get(idx)
+    return f"#{idx}" + (f" (?{palpite})" if palpite else "")
 
 
 @dataclass(frozen=True)

@@ -274,17 +274,29 @@ class Actuator:
         self.wait_for_idle(stable_for=20)
         if self.close_overlay():
             return True
-        # ultimo recurso: um passo de tempo e nova tentativa, para o caso de a
-        # recusa ter sido apenas uma animacao em curso
+        # ultimo recurso: deixa a animacao terminar e tenta mais uma rodada,
+        # comecando pelo Start, que e quem fecha a visao da mao
         self.bridge.frame_advance(self.settle_frames * 10)
+        self.bridge.press("start", 4)
+        self.wait_for_idle(stable_for=20)
         return self.close_overlay()
 
-    def close_overlay(self, tries: int = 4) -> bool:
-        """Sai da visao da mao ou de um prompt ate chegar na visao de campo."""
-        for _ in range(tries):
+    def close_overlay(self, tries: int = 3) -> bool:
+        """Sai da visao da mao ou de um prompt ate chegar na visao de campo.
+
+        Alterna CANCELAR e START porque os dois fecham coisas diferentes:
+        cancelar sai de um prompt, mas quem abre a visao da mao e o Start, e
+        nesse caso e ele que fecha. Tentar so cancelar deixava a mao aberta, o
+        agente preso numa carta, e ainda queimava frames tentando de novo -
+        era a demora visivel entre uma acao e outra.
+        """
+        for i in range(tries):
             if not self.overlay_open():
                 return True
-            self.cancel()
+            if i % 2 == 0:
+                self.cancel()
+            else:
+                self.bridge.press("start", 4)
             self.wait_for_idle(stable_for=20)
         return not self.overlay_open()
 

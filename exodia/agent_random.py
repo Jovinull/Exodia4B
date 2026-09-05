@@ -116,11 +116,9 @@ class RandomAgent:
                 f"campo_op {len(gs.opponent_field)}")
 
             for _ in range(acoes_por_turno):
-                # Le o estado sempre na VISAO DE CAMPO. Com a mao aberta o bit
-                # de "pode agir" dos nossos monstros aparece zerado, e o
-                # resultado e um duelo inteiro sem nenhum ataque ser sequer
-                # oferecido.
-                self.act.close_overlay()
+                # Ler NAO depende da tela aberta - foi medido comparando os
+                # mesmos registros em quatro visoes. A crenca antiga vinha da
+                # flag de sobreposicao, que era um bit de paridade de frame.
                 gs = st.read(self.bridge, self.domain)
                 acoes = legal_actions(gs, excluir=falharam)
                 # o fim de turno so entra no sorteio quando e a unica saida,
@@ -131,16 +129,12 @@ class RandomAgent:
                 if not ok and escolha.kind in ("attack", "attack_direct"):
                     falharam.add(escolha.field_slot)
 
-                # Rede de seguranca, NAO um remendo: depois de qualquer acao o
-                # jogo tem que estar de volta na visao de campo. Se nao estiver,
-                # isso e registrado alto - significa que o harness deixou um
-                # menu aberto e a proxima acao comecaria de um lugar
-                # desconhecido. Foi assim que o agente ficou preso numa carta
-                # da mao com o campo cheio.
-                if self.act.overlay_open() and not self.act.recover():
-                    r.presos += 1
-                    log("    !! preso com menu aberto; nao consegui voltar "
-                        "para a visao de campo")
+                # Depois de uma acao que falhou, sai de qualquer prompt
+                # pendente com CANCELAR. A rede anterior consultava um bit de
+                # paridade de frame e, quando ele dizia "menu aberto", apertava
+                # START - que na visao de campo encerra o turno.
+                if not ok:
+                    self.act.recover()
                 r.registrar(escolha.kind, ok)
                 motivo = "" if ok else "  <- " + self.diagnostico(escolha, gs)
                 if not ok:

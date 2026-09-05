@@ -48,8 +48,11 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--load", default="saibau")
     ap.add_argument("--seconds", type=int, default=180)
-    ap.add_argument("--chunk", type=int, default=45,
-                    help="frames por rodada de observacao")
+    ap.add_argument("--chunk", type=int, default=15,
+                    help="frames por rodada de observacao; menor = screenshot "
+                         "mais colado no aperto, e mais engasgo no jogo")
+    ap.add_argument("--max-shots", type=int, default=250,
+                    help="teto de screenshots de aperto")
     ap.add_argument("--dump", action="store_true", default=True,
                     help="despeja todos os registros crus a cada mudanca")
     ap.add_argument("--no-dump", dest="dump", action="store_false")
@@ -95,6 +98,7 @@ def main() -> int:
         diga(f" observando por {args.seconds}s; cada mudanca aparece aqui")
         diga("=" * 66)
 
+        n_press = 0
         anterior = resumo(st.read(b, RAM))
         diga(f"estado inicial: {anterior}")
         fim = time.time() + args.seconds
@@ -114,6 +118,15 @@ def main() -> int:
             if apertos or mudou:
                 if apertos:
                     diga(f"  botoes  {' '.join(apertos)}")
+                    # Screenshot a CADA aperto, nao so quando o estado muda.
+                    # O que falta descobrir e visual: em que tela o cursor
+                    # esta quando a pessoa aperta o botao. A RAM nao conta
+                    # isso - SELECTED_CARD e ambiguo quando a mesma carta esta
+                    # na mao e no campo, que e exatamente o caso do ataque.
+                    if n_press < args.max_shots:
+                        n_press += 1
+                        rot = apertos[-1].replace(":", "-").replace("+", "-")
+                        b.screenshot(str(out / f"b{n_press:03d}_{rot}.png"))
                 if mudou:
                     diga(f"  >>> MUDOU {mudou}")
                     g = st.read(b, RAM)

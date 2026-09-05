@@ -60,6 +60,12 @@ def onde(gs: st.GameState, cur: int) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--load", default="meu_turno")
+    ap.add_argument("--ancorar", action="store_true",
+                    help="chama ensure_hand_view antes de medir (nao usar em "
+                         "teste de ataque: puxa o cursor de volta para a mao)")
+    ap.add_argument("--gap", type=int, default=0,
+                    help="frames de espera fixa entre os apertos (imita a "
+                         "cadencia humana; 0 = espera o cursor assentar)")
     ap.add_argument("--raw", action="store_true",
                     help="usa aperto cru em vez de esperar o cursor mudar")
     ap.add_argument("--nav", default="up,up,up,right,right,right",
@@ -118,8 +124,11 @@ def main() -> int:
             print(f"\npreparando: invocando o slot {alvo} da mao...")
             ok = act.summon(alvo, gs.hand[alvo].card_id)
             print(f"  -> {'ok' if ok else 'FALHOU'}")
-            act.end_turn()          # passa o turno para o monstro poder atacar
-            gs = marcar("depois de invocar e passar o turno")
+            # NAO passa o turno. No log da pessoa jogando, o ataque veio logo
+            # depois da invocacao, no MESMO turno - e foi justamente ai que o
+            # cursor estava no campo. Passar a vez aqui jogava fora exatamente
+            # a condicao que se quer medir.
+            gs = marcar("logo apos invocar, sem passar a vez")
 
         if not gs.field:
             print("nao consegui por um monstro em campo; abortando")
@@ -146,8 +155,12 @@ def main() -> int:
         # SELECTED_CARD ainda exibe a carta da animacao dele - a leitura esta
         # velha, o cursor nao esta la. Sem esta ancoragem, todo passo parece
         # "nao mudou nada" e a medicao vira lixo.
-        act.ensure_hand_view()
-        marcar(f"ancorado -> {onde(st.read(b, RAM), act.cursor_card())}")
+        # ...mas SO quando pedido. Ancorar chama ensure_hand_view(), que puxa o
+        # cursor de volta para a mao - justamente o que destroi a condicao que
+        # se quer medir no ataque, onde o cursor precisa ficar no campo.
+        if args.ancorar:
+            act.ensure_hand_view()
+        marcar(f"inicio -> {onde(st.read(b, RAM), act.cursor_card())}")
 
         print(f"\n--- navegando: {args.nav} ---")
         for passo in [p.strip() for p in args.nav.split(",") if p.strip()]:
@@ -158,6 +171,14 @@ def main() -> int:
             elif passo == "circle":
                 act.cancel()
                 act.wait_for_idle(stable_for=30)
+                mudou = True
+            elif args.gap:
+                # Reproduz a CADENCIA de uma pessoa jogando, em vez de esperar
+                # o SELECTED_CARD assentar. Serve para separar duas causas que
+                # dao o mesmo sintoma: "o cursor esta no lugar errado" e "os
+                # apertos estao chegando cedo demais, no meio de animacao".
+                b.press(passo, 3)
+                b.frame_advance(args.gap)
                 mudou = True
             elif args.raw:
                 # Aperto cru. Necessario para medir movimento na GRADE DO

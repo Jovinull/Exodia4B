@@ -28,7 +28,9 @@ LP_OPPONENT_DISPLAY = 0x800EA022
 
 CARD_RECORDS = 0x801A7AE4     # array vivo; stride 28
 RECORD_STRIDE = 28
-MAX_RECORDS = 24
+# 30 e o limite util observado (indices 30+ trazem memoria nao inicializada).
+# Ler so 24 cortava a faixa final e escondia registros validos.
+MAX_RECORDS = 30
 
 HAND_SNAPSHOT = 0x801A7E20    # 5 x 6 bytes; FICA DESATUALIZADO - so diagnostico
 PLAYER_DECK = 0x801D0200      # 40 x u16 (nao embaralhado)

@@ -168,6 +168,10 @@ class Actuator:
         if not self.move_cursor_to_card(card_id, valid_ids=valid_ids):
             return False
 
+        antes_s = _st.read(self.bridge, self.domain)
+        campo_antes = sum(1 for r in antes_s.field if r.card_id == card_id)
+        mao_antes = sum(1 for r in antes_s.hand if r.card_id == card_id)
+
         self.confirm()                       # seleciona a carta
         self.wait_for_idle(stable_for=20)
 
@@ -184,21 +188,29 @@ class Actuator:
         #   carta no campo e fora da mao  -> terminou
         #   carta no campo e ainda na mao -> e o prompt da guardian star
         #   nenhum dos dois               -> ainda falta confirmar posicao
+        # ARMADILHA: o deck tem cartas repetidas. Perguntar "essa carta esta no
+        # campo e fora da mao?" da falso negativo quando existe outra copia da
+        # mesma carta na mao. Por isso conta-se QUANTAS copias estao em cada
+        # lugar, e nao se existe alguma.
+        def contagem(s) -> tuple[int, int]:
+            return (sum(1 for r in s.field if r.card_id == card_id),
+                    sum(1 for r in s.hand if r.card_id == card_id))
+
         for _ in range(max_prompts):
             s = _st.read(self.bridge, self.domain)
-            no_campo = any(r.card_id == card_id for r in s.field)
-            na_mao = any(r.card_id == card_id for r in s.hand)
-            if no_campo and not na_mao:
+            campo_agora, mao_agora = contagem(s)
+            if campo_agora > campo_antes:
                 return True
-            if no_campo and na_mao and guardian_star.lower() == "b":
+            # uma copia a menos na mao com o campo ainda igual = estamos no
+            # meio da colocacao, entao ainda ha prompt para confirmar
+            if mao_agora < mao_antes and guardian_star.lower() == "b":
                 self.bridge.press("down", 3)
                 self.bridge.frame_advance(self.settle_frames * 2)
             self.confirm()
             self.wait_for_idle(stable_for=20)
 
-        s = _st.read(self.bridge, self.domain)
-        return (any(r.card_id == card_id for r in s.field)
-                and not any(r.card_id == card_id for r in s.hand))
+        campo_fim, _ = contagem(_st.read(self.bridge, self.domain))
+        return campo_fim > campo_antes
 
     # ---------------------------------------------------------- sobreposicao
 
@@ -228,6 +240,39 @@ class Actuator:
             self.wait_for_idle(stable_for=20)
         return not self.overlay_open()
 
+    # ------------------------------------------------------------- ataque
+
+    def attack(self, card_id: int, target_index: int | None = None) -> bool:
+        """Ataca com um monstro nosso. Devolve True se algo mudou no duelo.
+
+        O fluxo exato de declaracao de ataque ainda NAO foi observado passo a
+        passo, entao aqui vai a tentativa mais direta: cursor no nosso monstro
+        na visao de campo, confirmar, e confirmar de novo no alvo.
+
+        O sucesso nao e assumido pela sequencia: mede-se pelo efeito. Um
+        ataque que aconteceu muda os LP do oponente, ou tira uma carta do
+        campo dele, ou apaga o bit 0x4000 do nosso atacante.
+        """
+        from . import state as _st
+
+        self.close_overlay()
+        antes = _st.read(self.bridge, self.domain)
+        podia = {r.card_id for r in antes.field if r.can_act}
+        chave = (antes.lp_opponent, len(antes.opponent_field), tuple(sorted(podia)))
+
+        alvos = {r.card_id for r in antes.field}
+        if not self.move_cursor_to_card(card_id, valid_ids=alvos):
+            return False
+        self.confirm()
+        self.wait_for_idle(stable_for=20)
+        self.confirm()
+        self.wait_for_idle(stable_for=40)
+
+        depois = _st.read(self.bridge, self.domain)
+        agora = {r.card_id for r in depois.field if r.can_act}
+        return (depois.lp_opponent, len(depois.opponent_field),
+                tuple(sorted(agora))) != chave
+
     # ---------------------------------------------------------- fim de turno
 
     def end_turn(self) -> bool:
@@ -244,12 +289,22 @@ class Actuator:
 
         self.close_overlay()
         antes = _st.read(self.bridge, self.domain)
-        chave_antes = (antes.lp_player, antes.lp_opponent,
-                       len(antes.hand), len(antes.opponent_field))
 
+        def chave(s):
+            # inclui o campo do oponente carta a carta: ele pode trocar um
+            # monstro por outro sem mudar a contagem
+            return (s.lp_player, s.lp_opponent, len(s.hand),
+                    s.opponent_hand_size,
+                    tuple(sorted(r.card_id for r in s.opponent_field)))
+
+        k = chave(antes)
         self.bridge.press("start", 4)
-        self.wait_for_idle(stable_for=40)
 
-        depois = _st.read(self.bridge, self.domain)
-        return (depois.lp_player, depois.lp_opponent,
-                len(depois.hand), len(depois.opponent_field)) != chave_antes
+        # O turno do oponente inclui compra, jogada e as vezes um ataque com
+        # animacao inteira. Esperar pouco fazia o fim de turno ser dado como
+        # falho mesmo tendo funcionado.
+        for _ in range(8):
+            self.wait_for_idle(stable_for=40)
+            if chave(_st.read(self.bridge, self.domain)) != k:
+                return True
+        return False

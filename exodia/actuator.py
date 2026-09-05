@@ -26,7 +26,7 @@ class Actuator:
     bridge: Bridge
     domain: str = "MainRAM"
     settle_frames: int = 4
-    max_wait_frames: int = 180
+    max_wait_frames: int = 420
 
     # ----------------------------------------------------------- primitivas
 
@@ -37,11 +37,14 @@ class Actuator:
 
     def press_until_change(self, button: str, addr: int, size: int = 2,
                            hold: int = 3) -> bool:
-        """Aperta e espera o valor em `addr` mudar.
+        """Aperta e espera o valor em `addr` mudar E assentar.
 
-        Devolve True se mudou dentro do orcamento de frames. False significa
-        que o input nao teve efeito - provavelmente foi engolido por uma
-        animacao, ou aquele botao nao faz nada nesta tela.
+        Nao basta detectar a primeira mudanca: durante uma animacao o endereco
+        do cursor exibe valores transitorios. Ja aconteceu de ele mostrar a
+        carta que o oponente estava usando para atacar, no meio da animacao de
+        dano, e o atuador achar que o cursor tinha se movido para la.
+
+        Por isso: espera mudar, depois espera parar de mudar.
         """
         before = self._read(addr, size)
         self.bridge.press(button, hold)
@@ -50,8 +53,19 @@ class Actuator:
             self.bridge.frame_advance(self.settle_frames)
             waited += self.settle_frames
             if self._read(addr, size) != before:
+                self.wait_stable(addr, size)
                 return True
         return False
+
+    def wait_for_idle(self, addr: int = SELECTED_CARD, size: int = 2,
+                      stable_for: int = 40) -> int:
+        """Espera o jogo parar de animar antes de agir.
+
+        Use isto ANTES de comecar uma sequencia de inputs. Agir enquanto o
+        oponente ataca faz os presses serem engolidos e a leitura de estado
+        pegar valores de animacao.
+        """
+        return self.wait_stable(addr, size, stable_for=stable_for)
 
     def wait_stable(self, addr: int, size: int = 2,
                     stable_for: int = 12) -> int:
@@ -78,18 +92,36 @@ class Actuator:
         return self._read(SELECTED_CARD, 2)
 
     def move_cursor_to_card(self, target_id: int, button: str = "right",
-                            max_steps: int = 12) -> bool:
+                            max_steps: int = 12,
+                            valid_ids: "set[int] | None" = None) -> bool:
         """Anda com o cursor ate ele pousar na carta pedida.
 
         Confere a cada passo em vez de contar cliques. Se der uma volta
         completa sem achar, desiste - assim um alvo impossivel falha rapido em
         vez de girar para sempre.
+
+        `valid_ids` e o conjunto de cartas que podem legitimamente estar sob o
+        cursor (normalmente a nossa mao). Serve para separar duas coisas que se
+        parecem: um cursor que realmente parou numa carta, e o endereco
+        exibindo a carta de uma ANIMACAO em curso - por exemplo o monstro do
+        oponente durante o ataque dele. Sem isso o atuador conta a animacao
+        como se fosse posicao de cursor e desiste achando que deu a volta.
         """
+        self.wait_for_idle()
         seen: set[int] = set()
         for _ in range(max_steps):
             cur = self.cursor_card()
             if cur == target_id:
                 return True
+            if valid_ids is not None and cur not in valid_ids:
+                # leitura suspeita: espera a animacao acabar e reavalia sem
+                # gastar um passo
+                self.wait_for_idle(stable_for=60)
+                if self.cursor_card() == target_id:
+                    return True
+                if self.cursor_card() not in valid_ids:
+                    self.press_until_change(button, SELECTED_CARD)
+                continue
             if cur in seen and len(seen) > 1:
                 return False          # deu a volta e nao achou
             seen.add(cur)

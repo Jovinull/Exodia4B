@@ -249,6 +249,23 @@ class Bridge:
         self._btnmap = out  # type: ignore[attr-defined]
         return out
 
+    # Tecla do teclado que o BizHawk mapeia para cada botao, so para deixar os
+    # logs legiveis: ler "cross" quando se apertou Z e confuso para quem esta
+    # olhando o jogo.
+    TECLAS = {
+        "cross": "Z", "circle": "X", "triangle": "S", "square": "A",
+        "start": "Enter", "select": "Espaco",
+        "up": "seta cima", "down": "seta baixo",
+        "left": "seta esq", "right": "seta dir",
+        "l1": "Q", "r1": "W", "l2": "E", "r2": "R",
+    }
+
+    @classmethod
+    def rotulo(cls, alias: str) -> str:
+        """'cross' -> 'Z (cross)'."""
+        t = cls.TECLAS.get(alias)
+        return f"{t} ({alias})" if t else alias
+
     def buttons(self) -> dict[str, str]:
         """Aliases disponiveis neste core (para diagnostico)."""
         return dict(self._button_map())

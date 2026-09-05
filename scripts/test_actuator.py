@@ -54,22 +54,24 @@ def main() -> int:
         b.frame_advance(2)
 
         act = Actuator(b, RAM)
+        # espera qualquer animacao em curso (ataque do oponente, dano) acabar
+        # antes de tocar em qualquer botao
+        act.wait_for_idle()
         act.open_hand()
-        # deixa a animacao de abertura terminar antes de mexer
-        act.wait_stable(st.SELECTED_CARD)
+        act.wait_for_idle()
 
         gs = st.read(b, RAM)
-        alvos = [r.card_id for r in gs.records
-                 if r.live and not r.is_opponent][:5]
+        alvos = [r.card_id for r in gs.hand]
         print("cartas alvo (dos registros do jogador):")
         for cid in alvos:
             print(f"  {cid:4}  {cards.name(cid)}")
         print(f"\ncursor inicial: {act.cursor_card()} "
               f"({cards.name(act.cursor_card())})\n")
 
+        validos = set(alvos)
         ok = falhou = 0
         for cid in alvos:
-            achou = act.move_cursor_to_card(cid)
+            achou = act.move_cursor_to_card(cid, valid_ids=validos)
             pousou = act.cursor_card()
             status = "OK " if achou else "FALHOU"
             if achou:

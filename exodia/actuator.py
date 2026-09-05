@@ -278,7 +278,6 @@ class Actuator:
             s = _st.read(self.bridge, self.domain)
             campo_agora, mao_agora = contagem(s)
             if campo_agora > campo_antes:
-                self._sair_da_grade()
                 return True
             # uma copia a menos na mao com o campo ainda igual = estamos no
             # meio da colocacao, entao ainda ha prompt para confirmar
@@ -301,12 +300,10 @@ class Actuator:
                 self.bridge.frame_advance(self.settle_frames * 3)
                 esperou += self.settle_frames * 3
                 if contagem(_st.read(self.bridge, self.domain))[0] > campo_antes:
-                    self._sair_da_grade()
                     return True
 
         campo_fim, _ = contagem(_st.read(self.bridge, self.domain))
         if campo_fim > campo_antes:
-            self._sair_da_grade()
             return True
         # esgotou os prompts sem colocar a carta: nao deixa a mao aberta para
         # a proxima acao
@@ -416,7 +413,15 @@ class Actuator:
         return self.cursor_on_our_field()
 
     def _sair_da_grade(self) -> None:
-        """Sai da grade de campo de volta para a mao, DELIBERADAMENTE.
+        """Volta da grade de campo para a mao.
+
+        NAO chamar no fim da invocacao. Foi tentado e piorou: a invocacao
+        repousa na NOSSA FILEIRA DE CAMPO, que e exatamente de onde o ataque
+        precisa comecar. Cancelar ali jogava o cursor para a mao e fazia o
+        ataque seguinte falhar - o oposto do que se queria.
+
+        Fica disponivel para quem realmente precise da mao fora do inicio do
+        turno. Texto original abaixo, porque o raciocinio continua valendo:
 
         Toda acao termina numa tela; a seguinte precisa saber qual. Ate aqui o
         harness tentava DESCOBRIR onde estava, e a descoberta falhava de um
@@ -504,6 +509,53 @@ class Actuator:
         #    vazio o SELECTED_CARD nao muda, e ela conclui que o cursor travou.
         #    Por isso os apertos abaixo sao CRUS, e quem diz onde paramos e o
         #    id sob o cursor.
+        # POSICIONA O ATACANTE na nossa fileira antes de confirmar.
+        #
+        # Sem isto so o PRIMEIRO ataque do turno funcionava. Depois de atacar,
+        # o jogo continua na nossa fileira, mas com o cursor sobre o monstro
+        # que ACABOU de atacar - e esse nao pode atacar de novo. Confirmar ali
+        # e pedir uma jogada que o jogo recusa. No log de uma pessoa jogando o
+        # segundo ataque comeca com `left`, movendo para outro monstro.
+        #
+        # Apertos CRUS: a fileira tem slots vazios, onde SELECTED_CARD nao muda
+        # e press_until_change concluiria que o cursor travou.
+        # A tela neutra do duelo tem TRES saidas, e essa era a peca que faltava:
+        #
+        #     left / right  ->  entram na MAO
+        #     up   / down   ->  entram na GRADE DE CAMPO
+        #     cross         ->  age na fileira em que voce ja esta
+        #
+        # `up` nao mexe em SELECTED_CARD, so troca a tela. Por isso a sondagem
+        # de botoes por leitura de RAM concluiu que ele "nao fazia nada", e o
+        # ataque ficou sessoes inteiras sem rota da mao para o campo. So o
+        # screenshot mostrou. E a mesma licao de sempre: um instrumento cego nao
+        # produz ausencia de sinal, produz ausencia de medicao.
+        nossos = {r.card_id for r in antes.field}
+        posicionado = False
+        for tentativa in range(3):
+            if tentativa:
+                # tentativa 0 assume que ja estamos na grade - e o caso logo
+                # apos invocar, que e o caminho mais comum
+                self.bridge.press("up", 3)
+                self.bridge.frame_advance(20)
+            for _ in range(BOARD_SLOTS):
+                self.bridge.press("left", 3)
+                self.bridge.frame_advance(12)
+            for _ in range(field_slot):
+                self.bridge.press("right", 3)
+                self.bridge.frame_advance(12)
+            if self.cursor_card() in nossos:
+                posicionado = True
+                break
+
+        # Guarda-corpo: sem um monstro NOSSO sob o cursor, estamos na fileira
+        # errada - provavelmente na mao. Nao confirmar: ali o `cross` comeca a
+        # jogar uma carta, e o agente perderia a jogada do turno sem entender
+        # por que.
+        if not posicionado:
+            self.recover()
+            return False
+
         self.confirm()                       # abre a mira, no nosso monstro
         self.wait_for_idle(stable_for=20)
 

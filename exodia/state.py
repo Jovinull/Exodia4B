@@ -43,14 +43,36 @@ SELECTED_CARD = 0x8009B338    # u16 - card id sob o cursor
 VIEW_FLAG = 0x8009B1D5        # u8  - muda ao abrir a mao com Start
 FUSION_RESULT = 0x800EA118    # u16 - resultado da ultima fusao
 
-# u8: 1 = ha uma sobreposicao aberta (visao da mao, prompt de atributo);
-#     0 = visao de campo limpa, o jogo esta esperando uma acao nova.
-# Achado por diff de RAM entre a tela de atributo e a tela de campo, e
-# confirmado em 5 savestates diferentes. E o sinal que diz quando uma sequencia
-# de menu terminou de verdade - sem ele o harness acha que a invocacao acabou
-# enquanto o jogo ainda espera a escolha da guardian star.
-OVERLAY_OPEN = 0x8009B0AC
-OVERLAY_OPEN_ALT = 0x8009B124   # acompanhou 0x8009B0AC em todas as amostras
+# NAO E FLAG DE SOBREPOSICAO. E UM BIT DE PARIDADE DE FRAME.
+#
+# Este endereco foi eleito como "tem menu aberto?" e reprovou da pior forma
+# possivel: ele alterna 1,0,1,0,... a CADA FRAME, sem relacao nenhuma com a
+# tela. Medido lendo 40 vezes seguidas com 1 frame entre as leituras:
+#
+#     1010101010101010101010101010101010101010
+#
+# E o motivo de ele ter passado na validacao original esta na leitura seguinte,
+# com 4 frames entre as amostras:
+#
+#     1111111111111111111111111111111111111111
+#
+# Amostrado de 4 em 4 frames, um bit que alterna a cada frame parece CONSTANTE.
+# O `settle_frames=4` do atuador criou exatamente esse aliasing, e por isso o
+# endereco pareceu estavel em 5 savestates diferentes.
+#
+# O estrago: `close_overlay()` decidia apertar START com base nisso, e START na
+# visao de campo ENCERRA O TURNO. Na pratica o harness passava o proprio turno
+# no meio de uma jogada, por cara ou coroa. Era a causa das invocacoes e
+# ataques que "falhavam" sem explicacao.
+#
+# Mantido aqui documentado de proposito: sem este comentario, o endereco volta
+# a parecer uma boa ideia na proxima vez que alguem procurar uma flag de menu.
+FRAME_PARITY = 0x8009B0AC
+FRAME_PARITY_ALT = 0x8009B124   # acompanha o de cima: mesma paridade
+
+# Nomes antigos, mantidos so para os scripts de diagnostico que os citam.
+OVERLAY_OPEN = FRAME_PARITY
+OVERLAY_OPEN_ALT = FRAME_PARITY_ALT
 
 # Flags do registro de 28 bytes, confirmadas contra a tela:
 #

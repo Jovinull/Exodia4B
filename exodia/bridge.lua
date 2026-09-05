@@ -164,6 +164,32 @@ handlers.FRAME = function(a)
   return tostring(emu.framecount())
 end
 
+-- FREERUN <frames> -> roda o jogo em velocidade normal por N frames e devolve
+-- os botoes que o HUMANO apertou, com o frame de cada aperto.
+--
+-- Existe para observar uma pessoa jogando: o laco normal da ponte so avanca um
+-- frame por poll do socket, o que deixa o jogo lento demais para alguem jogar.
+-- Aqui o Lua fica no controle do avanco e so devolve o log no fim.
+handlers.FREERUN = function(a)
+  local n = tonumber(a[2]) or 600
+  local log = {}
+  local anterior = ""
+  for _ = 1, n do
+    local apertados = {}
+    for nome, ligado in pairs(joypad.get(1)) do
+      if ligado == true then apertados[#apertados + 1] = tohex(nome) end
+    end
+    table.sort(apertados)
+    local atual = table.concat(apertados, "+")
+    if atual ~= anterior and atual ~= "" then
+      log[#log + 1] = emu.framecount() .. "=" .. atual
+    end
+    anterior = atual
+    emu.frameadvance()
+  end
+  return table.concat(log, ",")
+end
+
 -- SCREENSHOT <path>
 handlers.SCREENSHOT = function(a)
   local path = a[2]

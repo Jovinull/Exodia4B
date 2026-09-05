@@ -50,6 +50,9 @@ def main() -> int:
     ap.add_argument("--seconds", type=int, default=180)
     ap.add_argument("--chunk", type=int, default=45,
                     help="frames por rodada de observacao")
+    ap.add_argument("--dump", action="store_true", default=True,
+                    help="despeja todos os registros crus a cada mudanca")
+    ap.add_argument("--no-dump", dest="dump", action="store_false")
     args = ap.parse_args()
 
     out = ROOT / "runs" / "humano"
@@ -68,8 +71,14 @@ def main() -> int:
     linhas: list[str] = []
 
     def diga(s: str) -> None:
+        # grava a cada linha, e nao so no fim: um Ctrl+C no meio da observacao
+        # ja fez perder um log inteiro de uma sessao de jogo humana.
         print(s, flush=True)
         linhas.append(s)
+        try:
+            diario.write_text("\n".join(linhas), encoding="utf-8")
+        except OSError:
+            pass
 
     try:
         b.start_after_listen(timeout=180)
@@ -109,6 +118,18 @@ def main() -> int:
                     diga(f"  >>> MUDOU {mudou}")
                     g = st.read(b, RAM)
                     diga("      " + g.render().replace("\n", "\n      "))
+                    if args.dump:
+                        # despeja TODOS os registros crus. E o que permite
+                        # descobrir onde ficam as cartas do NOSSO campo: a
+                        # leitura atual acerta o campo do oponente e erra o
+                        # nosso, entao o layout do array ainda esta errado.
+                        diga("      registros crus:")
+                        for r in g.records:
+                            c = cards.get(r.card_id)
+                            diga(f"        #{r.index:<3} id={r.card_id:<4} "
+                                 f"atk={r.attack:<5} flags=0x{r.flags:04X} "
+                                 f"slot={r.slot:<3} "
+                                 f"{c.name[:24] if c else '?'}")
                     n_shot += 1
                     b.screenshot(str(out / f"m{n_shot:03d}.png"))
                 anterior = atual
@@ -117,9 +138,11 @@ def main() -> int:
         diario.write_text("\n".join(linhas), encoding="utf-8")
         print(f"\nlog salvo em {diario}")
         return 0
+    except KeyboardInterrupt:
+        diga("\ninterrompido pelo usuario")
+        return 0
     except BridgeError as exc:
         print("ERRO:", exc)
-        diario.write_text("\n".join(linhas), encoding="utf-8")
         return 1
     finally:
         b.close()

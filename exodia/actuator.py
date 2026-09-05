@@ -146,7 +146,8 @@ class Actuator:
 
     def summon(self, card_id: int, valid_ids: "set[int] | None" = None,
                guardian_star: str = "a", slot_moves: int = 0,
-               max_prompts: int = 5, face_up: bool = True) -> bool:
+               max_prompts: int = 5, face_up: bool = True,
+               flip_button: str = "right") -> bool:
         """Invoca uma carta da mao. Devolve True se ela chegou ao campo.
 
         Fluxo do jogo, mapeado por screenshot:
@@ -165,6 +166,16 @@ class Actuator:
         from . import state as _st          # import tardio evita ciclo
 
         self.wait_for_idle()
+
+        # ARMADILHA: o cursor e endereçado por card_id, e a MESMA carta pode
+        # estar na mao e no campo ao mesmo tempo. Sem garantir a visao da mao,
+        # o cursor pousava na copia do CAMPO e o confirmar abria a escolha de
+        # alvo de ataque em vez de invocar - o agente entao "voltava e pulava o
+        # turno". Por isso: fecha o que estiver aberto e abre a mao de novo.
+        self.close_overlay()
+        self.open_hand()
+        self.wait_for_idle(stable_for=20)
+
         if not self.move_cursor_to_card(card_id, valid_ids=valid_ids):
             return False
 
@@ -179,7 +190,7 @@ class Actuator:
         # desvira. Sem este passo o monstro entra de costas e nao pode atacar -
         # foi o que fez o agente encher o campo de cartas inuteis.
         if face_up:
-            self.bridge.press("right", 3)
+            self.bridge.press(flip_button, 3)
             self.bridge.frame_advance(self.settle_frames * 3)
 
         for _ in range(slot_moves):          # desloca o slot, se pedido

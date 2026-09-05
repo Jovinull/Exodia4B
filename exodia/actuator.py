@@ -224,7 +224,7 @@ class Actuator:
             return False
 
         antes_s = _st.read(self.bridge, self.domain)
-        campo_antes = sum(1 for r in antes_s.field if r.card_id == card_id)
+        campo_antes = len(antes_s.field)
         mao_antes = sum(1 for r in antes_s.hand if r.card_id == card_id)
 
         self.confirm()                       # seleciona a carta
@@ -262,14 +262,23 @@ class Actuator:
         # campo e fora da mao?" da falso negativo quando existe outra copia da
         # mesma carta na mao. Por isso conta-se QUANTAS copias estao em cada
         # lugar, e nao se existe alguma.
+        # Sucesso e o CAMPO CRESCER, medido pelo total - nao por contagem da
+        # carta especifica. Contar por id foi uma correcao a um problema real
+        # (copias repetidas davam falso negativo), mas trocou um erro por
+        # outro: quando a carta invocada ja tinha uma copia em campo, a leitura
+        # entrava em desacordo consigo mesma e a invocacao voltava False tendo
+        # funcionado - medido, com o campo indo de 1 para 2.
+        #
+        # O tamanho do campo nao tem essa ambiguidade: entrou carta, cresceu.
         def contagem(s) -> tuple[int, int]:
-            return (sum(1 for r in s.field if r.card_id == card_id),
+            return (len(s.field),
                     sum(1 for r in s.hand if r.card_id == card_id))
 
         for _ in range(max_prompts):
             s = _st.read(self.bridge, self.domain)
             campo_agora, mao_agora = contagem(s)
             if campo_agora > campo_antes:
+                self._sair_da_grade()
                 return True
             # uma copia a menos na mao com o campo ainda igual = estamos no
             # meio da colocacao, entao ainda ha prompt para confirmar
@@ -292,10 +301,12 @@ class Actuator:
                 self.bridge.frame_advance(self.settle_frames * 3)
                 esperou += self.settle_frames * 3
                 if contagem(_st.read(self.bridge, self.domain))[0] > campo_antes:
+                    self._sair_da_grade()
                     return True
 
         campo_fim, _ = contagem(_st.read(self.bridge, self.domain))
         if campo_fim > campo_antes:
+            self._sair_da_grade()
             return True
         # esgotou os prompts sem colocar a carta: nao deixa a mao aberta para
         # a proxima acao
@@ -403,6 +414,27 @@ class Actuator:
             self.bridge.frame_advance(self.settle_frames * 3)
         self.wait_for_idle(stable_for=40)
         return self.cursor_on_our_field()
+
+    def _sair_da_grade(self) -> None:
+        """Sai da grade de campo de volta para a mao, DELIBERADAMENTE.
+
+        Toda acao termina numa tela; a seguinte precisa saber qual. Ate aqui o
+        harness tentava DESCOBRIR onde estava, e a descoberta falhava de um
+        jeito traicoeiro: `cursor_on_hand()` compara o id sob o cursor com a
+        nossa mao, e depois de invocar o cursor fica sobre a carta recem-posta
+        - que, com copias no deck, tambem esta na mao. O teste dava "estou na
+        mao" com o cursor no campo, `ensure_hand_view()` nao fazia nada, e a
+        invocacao seguinte comecava na tela errada. Era o padrao "a primeira
+        acao do turno funciona, as outras nao".
+
+        E o mesmo problema do cursor por id (Notes/16 §20), voltando por outra
+        porta. A saida e a mesma: parar de adivinhar a posicao e passar a
+        DEIXAR o jogo num estado conhecido. Cancelar sai da grade e nao tem
+        efeito de jogo nenhum - no pior caso nao faz nada.
+        """
+        self.wait_for_idle(stable_for=40)
+        self.cancel()
+        self.wait_for_idle(stable_for=30)
 
     def recover(self, tries: int = 3) -> bool:
         """Volta a um estado conhecido depois de uma sequencia que falhou.

@@ -187,7 +187,7 @@ class Actuator:
 
     def summon(self, hand_slot: int, card_id: int,
                guardian_star: str = "a", slot_moves: int = 0,
-               max_prompts: int = 5, face_up: bool = True,
+               max_prompts: int = 8, face_up: bool = True,
                flip_button: str = "right") -> bool:
         """Invoca a carta que esta no slot `hand_slot` da mao.
 
@@ -243,6 +243,14 @@ class Actuator:
         # as cegas dessincroniza: se o jogo pedir um passo a menos, o confirme
         # sobrando comeca a colocar a proxima carta, e o duelo fica preso num
         # prompt de escolha de slot que nenhum outro botao resolve.
+        #
+        # O orcamento e 8 porque a medicao mostrou a carta entrando no CONFIRME
+        # 5 (tracado passo a passo, com screenshot de cada tela). O valor
+        # anterior era exatamente 5 - ou seja, em cima do limite: qualquer
+        # prompt a mais e a invocacao falhava. Era isso que fazia so a PRIMEIRA
+        # invocacao do duelo funcionar e todas as seguintes falharem com o
+        # generico "sequencia de invocacao". Folga aqui nao custa nada: o laco
+        # para assim que a carta aparece no campo.
         #
         # Por isso o laco olha o ESTADO a cada volta e decide o que fazer:
         #   carta no campo e fora da mao  -> terminou

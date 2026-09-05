@@ -345,6 +345,42 @@ class Actuator:
             self.press_until_change("left", SELECTED_CARD)
         return self.cursor_on_hand()
 
+    def cursor_on_our_field(self) -> bool:
+        """O cursor esta sobre um monstro NOSSO que ja esta em campo?"""
+        from . import state as _st
+        cur = self.cursor_card()
+        return any(r.card_id == cur
+                   for r in _st.read(self.bridge, self.domain).field)
+
+    def ensure_field_view(self, tries: int = 4) -> bool:
+        """Leva o cursor da mao para a fileira do nosso campo.
+
+        Sem isto o ataque nunca acontece: no comeco do turno o cursor esta na
+        MAO, e o `cross` que deveria escolher o atacante comeca a jogar uma
+        carta da mao.
+
+        Duas rotas, nessa ordem, porque as duas foram observadas:
+
+        1. **O jogo ja pode ter posto o cursor la.** Vendo uma pessoa jogar,
+           logo depois de uma invocacao o proximo `cross` selecionou o
+           atacante - ou seja, ao terminar de colocar uma carta o cursor fica
+           no campo. Entao antes de apertar qualquer coisa, confira.
+        2. **`up`**, quando ainda estamos na mao.
+
+        A verificacao e semantica (o id sob o cursor esta no nosso campo?)
+        porque nao existe endereco de posicao de cursor - e `press_until_change`
+        nao serve aqui: na grade ha slots VAZIOS, onde o id nao muda e a funcao
+        reportaria "nao andou" para um cursor que andou.
+        """
+        for _ in range(tries):
+            self.wait_for_idle(stable_for=40)
+            if self.cursor_on_our_field():
+                return True
+            self.bridge.press("up", 3)
+            self.bridge.frame_advance(self.settle_frames * 3)
+        self.wait_for_idle(stable_for=40)
+        return self.cursor_on_our_field()
+
     def recover(self, tries: int = 3) -> bool:
         """Volta a um estado conhecido depois de uma sequencia que falhou.
 
@@ -388,20 +424,32 @@ class Actuator:
                     tuple(sorted(r.card_id for r in s.field if r.has_attacked)))
 
         k = chave(antes)
+
+        # PRIMEIRO passo, e o que faltava: o cursor precisa estar na fileira do
+        # NOSSO CAMPO. Antes, `attack()` chamava direto o move_cursor_to_slot,
+        # que encosta na borda esquerda da fileira ONDE O CURSOR JA ESTIVER - e
+        # no comeco do turno ele esta na MAO. O `cross` seguinte comecava a
+        # jogar uma carta da mao em vez de escolher o atacante, e o ataque nunca
+        # era declarado. Direto (sem alvo) funcionava por acidente.
+        if not self.ensure_field_view():
+            self.recover()
+            return False
+
         if not self.move_cursor_to_slot(field_slot):
             self.recover()
             return False
-        self.confirm()
+        self.confirm()                       # escolhe o atacante
         self.wait_for_idle(stable_for=20)
 
-        if target_slot is not None:
-            # Depois de escolher o atacante o jogo passa o cursor para o lado
-            # do oponente. Aqui tambem se conta a partir da borda, em vez de
-            # procurar um id: as copias repetidas em campo tornam o id inutil
-            # para distinguir alvos.
-            self.move_cursor_to_slot(target_slot,
-                                     max_steps=BOARD_SLOTS * 2 + 2)
-        self.confirm()
+        # Escolhido o atacante, o jogo joga o cursor para o lado do oponente,
+        # ja pousado no primeiro monstro dele. Medido no log de uma pessoa
+        # jogando: com um alvo so, dois `right` a mais nao atrapalharam (batem
+        # na borda e param), e um ataque sem nenhum `right` acertou o primeiro
+        # monstro. Ou seja, `right` anda ENTRE os alvos - nao atravessa o campo.
+        for _ in range(target_slot or 0):
+            self.bridge.press("right", 3)
+            self.bridge.frame_advance(self.settle_frames * 2)
+        self.confirm()                       # declara
         self.wait_for_idle(stable_for=60)
 
         mudou = chave(_st.read(self.bridge, self.domain)) != k

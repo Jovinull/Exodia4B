@@ -185,39 +185,38 @@ class Actuator:
 
     # ------------------------------------------------------------- invocacao
 
-    def summon(self, card_id: int, valid_ids: "set[int] | None" = None,
+    def summon(self, hand_slot: int, card_id: int,
                guardian_star: str = "a", slot_moves: int = 0,
                max_prompts: int = 5, face_up: bool = True,
                flip_button: str = "right") -> bool:
-        """Invoca uma carta da mao. Devolve True se ela chegou ao campo.
+        """Invoca a carta que esta no slot `hand_slot` da mao.
 
-        Fluxo do jogo, mapeado por screenshot:
-            1. cursor na carta       (right/left na visao da mao)
+        Fluxo do jogo, mapeado observando uma pessoa jogar:
+            1. cursor na carta       (contando slots a partir da borda)
             2. cross                 -> seleciona a carta
-            3. cross                 -> escolhe o slot do campo
-            4. cross                 -> escolhe a guardian star
+            3. seta                  -> desvira (ela comeca de costas)
+            4. cross                 -> escolhe o slot do campo
+            5. cross                 -> escolhe a guardian star
+
+        O alvo e o SLOT, e nao o id da carta: com copias repetidas no deck o id
+        nao distingue duas cartas iguais, e a mesma carta pode estar na mao e
+        no campo. `card_id` entra so para CONFERIR o resultado no fim.
 
         A tela da guardian star ("ESCOLHA O ATRIBUTO") oferece duas opcoes, na
         ordem A e depois B da carta. `guardian_star="b"` desce uma antes de
-        confirmar. `slot_moves` desloca o slot escolhido com "right".
-
-        Nao confirma sozinho o sucesso pelo numero de passos: confere no fim se
-        alguma carta nossa ficou com a flag de campo.
+        confirmar. `slot_moves` desloca o slot de campo escolhido.
         """
         from . import state as _st          # import tardio evita ciclo
 
         self.wait_for_idle()
 
-        # ARMADILHA: o cursor e endereçado por card_id, e a MESMA carta pode
-        # estar na mao e no campo ao mesmo tempo. Sem garantir a visao da mao,
-        # o cursor pousava na copia do CAMPO e o confirmar abria a escolha de
-        # alvo de ataque em vez de invocar - o agente entao "voltava e pulava o
-        # turno". Por isso: fecha o que estiver aberto e abre a mao de novo.
+        # Garante a visao da mao: sem isso o cursor pode pousar no CAMPO, e o
+        # confirmar abre a escolha de alvo de ataque em vez de invocar.
         self.close_overlay()
         self.open_hand()
         self.wait_for_idle(stable_for=20)
 
-        if not self.move_cursor_to_card(card_id, valid_ids=valid_ids):
+        if not self.move_cursor_to_slot(hand_slot):
             self.recover()
             return False
 
@@ -339,21 +338,22 @@ class Actuator:
 
     # ------------------------------------------------------------- ataque
 
-    def attack(self, card_id: int, target_card_id: int | None = None) -> bool:
-        """Ataca com um monstro nosso. Devolve True se o duelo mudou.
+    def attack(self, field_slot: int, target_slot: int | None = None,
+               card_id: int | None = None) -> bool:
+        """Ataca com o monstro que esta no slot `field_slot` do nosso campo.
 
         Fluxo observado numa pessoa jogando devagar:
             1. cursor no NOSSO monstro, na visao de campo
             2. confirmar               -> escolhe o atacante
-            3. NAVEGAR ate o monstro do oponente   <- o passo que faltava
+            3. andar ate o monstro do oponente
             4. confirmar               -> declara o ataque
 
-        A versao anterior dava dois confirmes seguidos sem andar ate o alvo, e
-        por isso falhou em 19 de 19 tentativas: o segundo confirme caia no
-        vazio.
+        Endereça por SLOT, e nao por id: o oponente costuma ter varias copias
+        da mesma carta em campo, e mirar por id parava na primeira encontrada,
+        que nem sempre e a pretendida.
 
         Sucesso nao se assume pela sequencia: mede-se pelo efeito - LP do
-        oponente, cartas no campo dele, ou o bit de "pode agir" do atacante.
+        oponente, cartas no campo dele, ou o bit de "ja atacou" do atacante.
         """
         from . import state as _st
 
@@ -366,26 +366,18 @@ class Actuator:
                     tuple(sorted(r.card_id for r in s.field if r.has_attacked)))
 
         k = chave(antes)
-        meus = {r.card_id for r in antes.field}
-        if not self.move_cursor_to_card(card_id, valid_ids=meus):
+        if not self.move_cursor_to_slot(field_slot):
             self.recover()
             return False
         self.confirm()
         self.wait_for_idle(stable_for=20)
 
-        if target_card_id is not None:
-            # O cursor comeca no NOSSO monstro e atravessa o campo ate o lado
-            # inimigo. Passar so as cartas do oponente como validas fazia cada
-            # passo sobre uma carta nossa ser tratado como animacao, com espera
-            # cara e gasto de uma tentativa - o orçamento acabava antes de
-            # chegar ao alvo. Por isso valem os dois lados durante a mira.
-            inimigos = ({r.card_id for r in antes.opponent_field}
-                        | {r.card_id for r in antes.field})
-            # se nao achar o alvo, confirma mesmo assim: em ataque direto o
-            # jogo nao pede alvo nenhum
-            # o cursor pode ter de varrer os 5 slots nossos e os 5 do
-            # oponente antes de pousar no alvo, mais uma folga
-            self.move_cursor_to_card(target_card_id, valid_ids=inimigos,
+        if target_slot is not None:
+            # Depois de escolher o atacante o jogo passa o cursor para o lado
+            # do oponente. Aqui tambem se conta a partir da borda, em vez de
+            # procurar um id: as copias repetidas em campo tornam o id inutil
+            # para distinguir alvos.
+            self.move_cursor_to_slot(target_slot,
                                      max_steps=BOARD_SLOTS * 2 + 2)
         self.confirm()
         self.wait_for_idle(stable_for=60)

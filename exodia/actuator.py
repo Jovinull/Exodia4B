@@ -17,6 +17,10 @@ from .bridge import Bridge
 from .state import SELECTED_CARD
 
 
+# Zonas de monstro por lado. Define o quanto o cursor pode precisar andar.
+BOARD_SLOTS = 5
+
+
 class ActuatorError(RuntimeError):
     pass
 
@@ -177,6 +181,7 @@ class Actuator:
         self.wait_for_idle(stable_for=20)
 
         if not self.move_cursor_to_card(card_id, valid_ids=valid_ids):
+            self.recover()
             return False
 
         antes_s = _st.read(self.bridge, self.domain)
@@ -228,7 +233,12 @@ class Actuator:
             self.wait_for_idle(stable_for=20)
 
         campo_fim, _ = contagem(_st.read(self.bridge, self.domain))
-        return campo_fim > campo_antes
+        if campo_fim > campo_antes:
+            return True
+        # esgotou os prompts sem colocar a carta: nao deixa a mao aberta para
+        # a proxima acao
+        self.recover()
+        return False
 
     # ---------------------------------------------------------- sobreposicao
 
@@ -248,6 +258,26 @@ class Actuator:
             self.bridge.frame_advance(self.settle_frames)
             waited += self.settle_frames
         return False
+
+    def recover(self) -> bool:
+        """Volta a um estado conhecido: visao de campo, sem menu aberto.
+
+        Toda rotina que abre menu chama isto no caminho de FALHA. Sem isso a
+        sobreposicao fica aberta e contamina a proxima acao - foi o que
+        prendeu o agente numa carta da mao quando o campo encheu: a invocacao
+        falhava, a mao continuava aberta, e ele nao chegava a decidir atacar.
+
+        Devolve False quando nao conseguiu voltar. Isso NAO deve ser
+        silencioso: quem chama precisa registrar, porque significa que o jogo
+        ficou num estado que o harness nao sabe desfazer.
+        """
+        self.wait_for_idle(stable_for=20)
+        if self.close_overlay():
+            return True
+        # ultimo recurso: um passo de tempo e nova tentativa, para o caso de a
+        # recusa ter sido apenas uma animacao em curso
+        self.bridge.frame_advance(self.settle_frames * 10)
+        return self.close_overlay()
 
     def close_overlay(self, tries: int = 4) -> bool:
         """Sai da visao da mao ou de um prompt ate chegar na visao de campo."""
@@ -289,19 +319,32 @@ class Actuator:
         k = chave(antes)
         meus = {r.card_id for r in antes.field}
         if not self.move_cursor_to_card(card_id, valid_ids=meus):
+            self.recover()
             return False
         self.confirm()
         self.wait_for_idle(stable_for=20)
 
         if target_card_id is not None:
-            inimigos = {r.card_id for r in antes.opponent_field}
+            # O cursor comeca no NOSSO monstro e atravessa o campo ate o lado
+            # inimigo. Passar so as cartas do oponente como validas fazia cada
+            # passo sobre uma carta nossa ser tratado como animacao, com espera
+            # cara e gasto de uma tentativa - o orçamento acabava antes de
+            # chegar ao alvo. Por isso valem os dois lados durante a mira.
+            inimigos = ({r.card_id for r in antes.opponent_field}
+                        | {r.card_id for r in antes.field})
             # se nao achar o alvo, confirma mesmo assim: em ataque direto o
             # jogo nao pede alvo nenhum
-            self.move_cursor_to_card(target_card_id, valid_ids=inimigos)
+            # o cursor pode ter de varrer os 5 slots nossos e os 5 do
+            # oponente antes de pousar no alvo, mais uma folga
+            self.move_cursor_to_card(target_card_id, valid_ids=inimigos,
+                                     max_steps=BOARD_SLOTS * 2 + 2)
         self.confirm()
         self.wait_for_idle(stable_for=60)
 
-        return chave(_st.read(self.bridge, self.domain)) != k
+        mudou = chave(_st.read(self.bridge, self.domain)) != k
+        if not mudou:
+            self.recover()
+        return mudou
 
     # ---------------------------------------------------------- fim de turno
 

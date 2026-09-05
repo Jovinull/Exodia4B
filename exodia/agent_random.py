@@ -26,6 +26,7 @@ class Resultado:
     acoes_falhas: int = 0
     por_tipo: dict[str, list[int]] = field(default_factory=dict)
     motivos: dict[str, int] = field(default_factory=dict)
+    presos: int = 0          # vezes que o harness nao voltou a visao de campo
     terminou: str = "limite de turnos"
 
     def registrar(self, kind: str, ok: bool) -> None:
@@ -42,6 +43,9 @@ class Resultado:
                   f"fim: {self.terminou}"]
         for kind, (ok, falhou) in sorted(self.por_tipo.items()):
             linhas.append(f"  {kind:15} {ok} ok / {falhou} falhas")
+        if self.presos:
+            linhas.append(f"ATENCAO: {self.presos}x o harness nao conseguiu "
+                          f"voltar para a visao de campo")
         if self.motivos:
             linhas.append("motivos das falhas:")
             for m, n in sorted(self.motivos.items(), key=lambda x: -x[1]):
@@ -130,6 +134,17 @@ class RandomAgent:
                 ok = self.executar(escolha, gs)
                 if not ok and escolha.kind in ("attack", "attack_direct"):
                     falharam.add(escolha.card_id)
+
+                # Rede de seguranca, NAO um remendo: depois de qualquer acao o
+                # jogo tem que estar de volta na visao de campo. Se nao estiver,
+                # isso e registrado alto - significa que o harness deixou um
+                # menu aberto e a proxima acao comecaria de um lugar
+                # desconhecido. Foi assim que o agente ficou preso numa carta
+                # da mao com o campo cheio.
+                if self.act.overlay_open() and not self.act.recover():
+                    r.presos += 1
+                    log("    !! preso com menu aberto; nao consegui voltar "
+                        "para a visao de campo")
                 r.registrar(escolha.kind, ok)
                 motivo = "" if ok else "  <- " + self.diagnostico(escolha, gs)
                 if not ok:

@@ -60,8 +60,12 @@ OVERLAY_OPEN_ALT = 0x8009B124   # acompanhou 0x8009B0AC em todas as amostras
 #           as cinco desenhadas na tela.
 #   0x2000  carta do OPONENTE. So apareceu do lado do oponente, em amostras de
 #           tipos diferentes (Magia, Maquina, Terra).
-#   0x1000  em campo. Observado no monstro de 250 ATK do oponente que atacou,
-#           e o dano recebido bateu com o ATK dele.
+#   0x1000  significa coisas DIFERENTES nos dois lados:
+#             - do oponente: carta em campo (o monstro de 250 ATK que atacou
+#               tinha esse bit, e o dano recebido bateu com o ATK dele);
+#             - do nosso lado: carta VIRADA PARA BAIXO. Invocar apertando uma
+#               seta, que desvira a carta, termina em 0x8000; invocar sem
+#               apertar nada termina em 0x9000, e essa carta nao ataca.
 #   0x0400  "monstro em campo" segundo o fonte da recompilacao; nunca foi
 #           observado ligado aqui. Nao confiar.
 #
@@ -71,7 +75,11 @@ OVERLAY_OPEN_ALT = 0x8009B124   # acompanhou 0x8009B0AC em todas as amostras
 #   indices 30+     = lixo/memoria nao inicializada (aparece "Blue-eyes" id=1)
 FLAG_ACTIVE = 0x8000
 FLAG_OPPONENT = 0x2000
-FLAG_ON_FIELD = 0x1000     # confiavel APENAS para o oponente
+# 0x1000 no NOSSO lado indica carta VIRADA PARA BAIXO, nao "em campo".
+# Medido: invocar apertando uma seta (que desvira a carta) termina em 0x8000;
+# invocar sem apertar nada termina em 0x9000. Uma carta de costas nao ataca.
+FLAG_FACE_DOWN = 0x1000
+FLAG_ON_FIELD_OPPONENT = 0x1000   # do lado do oponente o mesmo bit marca campo
 FLAG_CAN_ACT = 0x4000      # visto nos NOSSOS monstros durante o nosso turno
 FLAG_EXTRA_0400 = 0x0400   # acompanha 0x4000 as vezes; significado incerto
 
@@ -82,9 +90,9 @@ FLAG_EXTRA_0400 = 0x0400   # acompanha 0x4000 as vezes; significado incerto
 #           foi visto #5 e #7 ocupados com #6 ausente)
 #   15..29  lado do OPONENTE
 #
-# ARMADILHA: o bit 0x1000 marca campo do OPONENTE, mas NAO e ligado nos nossos
-# monstros em campo. Do nosso lado as flags oscilam entre 0x8000, 0xC000 e
-# 0xC400 conforme o monstro ainda pode agir no turno, e voltam para 0x8000
+# ARMADILHA: o bit 0x1000 marca campo do OPONENTE, mas do nosso lado ele quer
+# dizer "virada para baixo". Do nosso lado as flags ainda oscilam entre 0x8000,
+# 0xC000 e 0xC400 conforme o monstro pode agir no turno, voltando a 0x8000
 # depois do fim de turno. Por isso o nosso campo se identifica pelo INDICE.
 #
 # Isso custou varias sessoes: enquanto o campo proprio era lido pela flag, o
@@ -131,13 +139,18 @@ class CardInRecord:
         do oponente pelo bit 0x1000, do nosso lado pelo indice do registro.
         """
         if self.is_opponent:
-            return bool(self.flags & FLAG_ON_FIELD)
+            return bool(self.flags & FLAG_ON_FIELD_OPPONENT)
         return self.index > PLAYER_HAND_MAX
 
     @property
     def can_act(self) -> bool:
         """Nosso monstro que ainda pode agir neste turno (bit 0x4000)."""
         return bool(self.flags & FLAG_CAN_ACT)
+
+    @property
+    def face_down(self) -> bool:
+        """Carta nossa virada para baixo. De costas ela nao ataca."""
+        return not self.is_opponent and bool(self.flags & FLAG_FACE_DOWN)
 
     def describe(self) -> str:
         c = cards.get(self.card_id)

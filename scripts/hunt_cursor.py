@@ -5,17 +5,17 @@ pode estar na mao e no campo, e o deck tem copias repetidas. Foi o que fez o
 agente selecionar a carta errada e travar. Para a fusao, que depende de
 escolher cartas especificas, endereçar por ID nao serve de jeito nenhum.
 
-O que este script faz: enquanto uma PESSOA move o cursor um slot por vez, ele
-tira uma foto de uma regiao da RAM a cada movimento e procura enderecos que
-andem junto com o cursor - isto e, que mudem a cada passo e voltem ao andar
-para tras.
+Enquanto uma PESSOA move o cursor um slot por vez, este script fotografa uma
+regiao da RAM a cada movimento e procura enderecos que andem junto com o
+cursor.
 
-Tambem separa os movimentos feitos na MAO dos feitos no CAMPO, o que de quebra
-deve revelar um sinal confiavel de "que tela e esta" - o flag que eu uso hoje
-falha em jogo ao vivo.
+As fotos vao para disco na hora. A conexao com o emulador ja caiu no meio de
+uma coleta e levou junto uma sessao inteira de dados recem produzidos; com os
+arquivos salvos, a analise pode ser refeita sem repetir o trabalho.
 
 Uso:
     python scripts/hunt_cursor.py --load meu_turno --seconds 150
+    python scripts/hunt_cursor.py --offline      # so reanalisa o que ja existe
 """
 
 from __future__ import annotations
@@ -41,6 +41,9 @@ HOST, PORT = "127.0.0.1", 55355
 BASE, TAM = 0x09B000, 0x1000
 CHUNK = 512
 
+OUT = ROOT / "runs" / "cursor_hunt"
+SNAPS = OUT / "snapshots"
+
 
 def ler(b: Bridge, ram: str) -> bytes:
     buf = bytearray()
@@ -49,25 +52,53 @@ def ler(b: Bridge, ram: str) -> bytes:
     return bytes(buf)
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--load", default="meu_turno")
-    ap.add_argument("--seconds", type=int, default=150)
-    ap.add_argument("--chunk", type=int, default=30, help="frames por rodada")
-    args = ap.parse_args()
+def analisar(log) -> None:
+    """Le as fotos gravadas e aponta candidatos a indice de cursor.
 
-    out = ROOT / "runs" / "cursor_hunt"
-    out.mkdir(parents=True, exist_ok=True)
-    diario = out / "log.txt"
-    linhas: list[str] = []
+    Um bom candidato muda em quase todo movimento e assume poucos valores
+    pequenos - a cara de um indice de slot, e nao de um id de carta nem de um
+    contador que so cresce.
+    """
+    arquivos = sorted(SNAPS.glob("*.bin"))
+    if len(arquivos) < 2:
+        log("dados insuficientes: menos de 2 fotos gravadas")
+        return
 
-    def log(s: str = "") -> None:
-        print(s, flush=True)
-        linhas.append(str(s))
-        try:
-            diario.write_text("\n".join(linhas), encoding="utf-8")
-        except OSError:
-            pass
+    fotos = [(p.stem, p.read_bytes()) for p in arquivos]
+    log(f"\nanalisando {len(fotos)} fotos de {TAM} bytes")
+
+    historico: dict[int, list[int]] = defaultdict(list)
+    for (_, a), (_, c) in zip(fotos, fotos[1:]):
+        for i in range(min(len(a), len(c))):
+            if a[i] != c[i]:
+                historico[BASE + i].append(c[i])
+
+    movimentos = len(fotos) - 1
+    candidatos = []
+    for end, vals in historico.items():
+        distintos = sorted(set(vals))
+        if (len(vals) >= max(2, movimentos // 3)
+                and 2 <= len(distintos) <= 12
+                and max(distintos) <= 20):
+            candidatos.append((len(vals), end, distintos))
+
+    log(f"\n{'endereco':>14} {'mudou':>6} {'distintos':>10}  valores")
+    for n, end, distintos in sorted(candidatos, reverse=True)[:25]:
+        log(f"  0x{0x80000000 | end:08X} {n:6} {len(distintos):10}  {distintos}")
+    if not candidatos:
+        log("  nenhum candidato com cara de indice de slot")
+
+    log(f"\nvalor de cada candidato em cada foto (para ver se ANDA junto):")
+    for _, end, _ in sorted(candidatos, reverse=True)[:8]:
+        serie = [f[end - BASE] for _, f in fotos]
+        log(f"  0x{0x80000000 | end:08X}: {serie}")
+    log(f"\nmovimentos analisados: {movimentos}")
+
+
+def coletar(args, log) -> None:
+    SNAPS.mkdir(parents=True, exist_ok=True)
+    for velho in SNAPS.glob("*.bin"):
+        velho.unlink()
 
     b = Bridge(HOST, PORT)
     b.listen()
@@ -76,6 +107,7 @@ def main() -> int:
          f"--lua={LUA}", str(ISO)],
         cwd=str(EMUHAWK.parent),
     )
+    movimentos = 0
     try:
         b.start_after_listen(timeout=180)
         RAM = b.main_ram()
@@ -87,15 +119,12 @@ def main() -> int:
         log("=" * 64)
         log(" MOVA O CURSOR DEVAGAR, UM SLOT POR VEZ")
         log("   1) Enter abre a mao; mova com as setas, um passo por vez")
-        log("   2) Enter fecha a mao")
-        log("   3) na visao de campo, mova com as setas um passo por vez")
-        log(" nao precisa jogar nada, so mover")
+        log("   2) na visao de campo, mova com as setas um passo por vez")
+        log(" nao precisa jogar; se precisar apertar Z para navegar, tudo bem")
         log("=" * 64)
 
         anterior = ler(b, RAM)
-        # endereco -> lista de valores observados apos cada movimento
-        historico: dict[int, list[int]] = defaultdict(list)
-        movimentos = 0
+        SNAPS.joinpath("000_inicio.bin").write_bytes(anterior)
         fim = time.time() + args.seconds
 
         while time.time() < fim:
@@ -106,40 +135,50 @@ def main() -> int:
                 continue
 
             atual = ler(b, RAM)
-            mudou = [i for i in range(TAM) if atual[i] != anterior[i]]
             movimentos += 1
-            for i in mudou:
-                historico[BASE + i].append(atual[i])
+            nome = "+".join(apertos)[:20]
+            SNAPS.joinpath(f"{movimentos:03d}_{nome}.bin").write_bytes(atual)
+            mudou = sum(1 for i in range(TAM) if atual[i] != anterior[i])
             log(f"  movimento {movimentos:3}  botoes={apertos}  "
-                f"{len(mudou)} bytes mudaram")
+                f"{mudou} bytes mudaram  (foto salva)")
             anterior = atual
-
-        # Um bom candidato a posicao de cursor muda MUITO (quase todo
-        # movimento) e assume poucos valores distintos e pequenos - um indice
-        # de slot, nao um id de carta nem um contador.
-        log(f"\n{'endereco':>12} {'mudou':>6} {'distintos':>10}  valores")
-        candidatos = []
-        for end, vals in historico.items():
-            distintos = sorted(set(vals))
-            if len(vals) >= max(3, movimentos // 3) and 2 <= len(distintos) <= 12 \
-                    and max(distintos) <= 20:
-                candidatos.append((len(vals), end, distintos))
-        for n, end, distintos in sorted(candidatos, reverse=True)[:25]:
-            log(f"  0x{0x80000000 | end:08X} {n:6} {len(distintos):10}  "
-                f"{distintos}")
-        if not candidatos:
-            log("  nenhum candidato com cara de indice de slot")
-        log(f"\nmovimentos observados: {movimentos}")
-        log(f"log: {diario}")
-        return 0
     except KeyboardInterrupt:
-        log("\ninterrompido")
-        return 0
-    except BridgeError as exc:
-        log(f"ERRO: {exc}")
-        return 1
+        log("\ninterrompido pelo usuario")
+    except (BridgeError, OSError) as exc:
+        log(f"\nconexao com o emulador caiu: {exc}")
+        log("as fotos ja gravadas foram preservadas")
     finally:
         b.close()
+    log(f"\n{movimentos} movimentos capturados")
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--load", default="meu_turno")
+    ap.add_argument("--seconds", type=int, default=150)
+    ap.add_argument("--chunk", type=int, default=30, help="frames por rodada")
+    ap.add_argument("--offline", action="store_true",
+                    help="nao coleta, so reanalisa as fotos ja gravadas")
+    args = ap.parse_args()
+
+    OUT.mkdir(parents=True, exist_ok=True)
+    diario = OUT / "log.txt"
+    linhas: list[str] = []
+
+    def log(s: str = "") -> None:
+        print(s, flush=True)
+        linhas.append(str(s))
+        try:
+            diario.write_text("\n".join(linhas), encoding="utf-8")
+        except OSError:
+            pass
+
+    if not args.offline:
+        coletar(args, log)
+    analisar(log)
+    log(f"\nlog: {diario}")
+    log(f"fotos: {SNAPS}")
+    return 0
 
 
 if __name__ == "__main__":

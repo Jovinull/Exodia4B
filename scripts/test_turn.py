@@ -66,7 +66,7 @@ def main() -> int:
                   f"campo_op {len(g.opponent_field)} | "
                   f"cursor_na_mao {int(act.cursor_on_hand())}")
 
-            act.open_hand()
+            act.ensure_hand_view()
             act.wait_for_idle()
             g = st.read(b, RAM)
             monstros = [r for r in g.hand

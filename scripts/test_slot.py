@@ -53,7 +53,7 @@ def main() -> int:
         act = Actuator(b, RAM)
         act.wait_for_idle()
         act.recover()
-        act.open_hand()
+        act.ensure_hand_view()
         act.wait_for_idle(stable_for=20)
 
         mao = st.read(b, RAM).hand

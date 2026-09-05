@@ -85,7 +85,7 @@ def main() -> int:
 
         act = Actuator(b, RAM)
         if args.open_hand:
-            act.open_hand()
+            act.ensure_hand_view()
         act.wait_stable(st.SELECTED_CARD)
 
         gs = st.read(b, RAM)

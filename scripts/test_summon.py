@@ -59,7 +59,7 @@ def main() -> int:
 
         act = Actuator(b, RAM)
         act.wait_for_idle()
-        act.open_hand()
+        act.ensure_hand_view()
         act.wait_for_idle()
 
         resultados: list[bool] = []

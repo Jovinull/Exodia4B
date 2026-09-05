@@ -66,16 +66,29 @@ def legal_actions(state: GameState,
             c = cards.get(r.card_id)
             if not c or not c.is_monster:
                 continue
-            for estrela, idx in (("a", c.guardian_a), ("b", c.guardian_b)):
-                acoes.append(Action(
-                    kind="summon",
-                    card_id=r.card_id,
-                    hand_slot=slot,
-                    guardian_star=estrela,
-                    label=(f"Invocar {c.name} ({c.attack}/{c.defense}) "
-                           f"com guardian star "
-                           f"{cards.guardian_star_label(idx)}"),
-                ))
+            # So a estrela A por enquanto. A tela "ESCOLHA O ATRIBUTO" oferece
+            # as duas na ordem A, B, e escolher a B exige descer uma linha
+            # antes de confirmar - mas o harness ainda nao sabe DETECTAR que
+            # esta nesse prompt: MENU_ID, MODE e VIEW_FLAG ficam constantes
+            # durante a invocacao inteira, e o numero de confirmes ate a carta
+            # cair no campo varia com o tempo de animacao.
+            #
+            # Ate existir esse sinal, oferecer a estrela B seria mentir para o
+            # agente: o codigo antigo aceitava guardian_star="b", nunca
+            # apertava o "baixo" (a condicao que disparava o passo nunca era
+            # verdadeira) e invocava com a estrela A do mesmo jeito. O agente
+            # raciocinava sobre uma alavanca desligada.
+            #
+            # Melhor uma escolha a menos do que uma escolha falsa.
+            acoes.append(Action(
+                kind="summon",
+                card_id=r.card_id,
+                hand_slot=slot,
+                guardian_star="a",
+                label=(f"Invocar {c.name} ({c.attack}/{c.defense}) "
+                       f"com guardian star "
+                       f"{cards.guardian_star_label(c.guardian_a)}"),
+            ))
 
     # --- atacar ------------------------------------------------------------
     # Pode atacar quem esta de frente e ainda NAO atacou neste turno. O bit

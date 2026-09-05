@@ -30,6 +30,7 @@ class Action:
     label: str                     # texto mostrado ao agente
     card_id: int | None = None     # carta nossa envolvida
     target_index: int | None = None  # indice do registro alvo
+    target_card_id: int | None = None  # carta alvo (para mirar o cursor)
     guardian_star: str = "a"
 
     def __str__(self) -> str:
@@ -79,6 +80,7 @@ def legal_actions(state: GameState) -> list[Action]:
                     kind="attack",
                     card_id=a.card_id,
                     target_index=alvo.index,
+                    target_card_id=alvo.card_id,
                     label=f"Atacar {nome_t} com {nome_a} ({a.attack} ATK)",
                 ))
         else:

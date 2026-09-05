@@ -242,36 +242,48 @@ class Actuator:
 
     # ------------------------------------------------------------- ataque
 
-    def attack(self, card_id: int, target_index: int | None = None) -> bool:
-        """Ataca com um monstro nosso. Devolve True se algo mudou no duelo.
+    def attack(self, card_id: int, target_card_id: int | None = None) -> bool:
+        """Ataca com um monstro nosso. Devolve True se o duelo mudou.
 
-        O fluxo exato de declaracao de ataque ainda NAO foi observado passo a
-        passo, entao aqui vai a tentativa mais direta: cursor no nosso monstro
-        na visao de campo, confirmar, e confirmar de novo no alvo.
+        Fluxo observado numa pessoa jogando devagar:
+            1. cursor no NOSSO monstro, na visao de campo
+            2. confirmar               -> escolhe o atacante
+            3. NAVEGAR ate o monstro do oponente   <- o passo que faltava
+            4. confirmar               -> declara o ataque
 
-        O sucesso nao e assumido pela sequencia: mede-se pelo efeito. Um
-        ataque que aconteceu muda os LP do oponente, ou tira uma carta do
-        campo dele, ou apaga o bit 0x4000 do nosso atacante.
+        A versao anterior dava dois confirmes seguidos sem andar ate o alvo, e
+        por isso falhou em 19 de 19 tentativas: o segundo confirme caia no
+        vazio.
+
+        Sucesso nao se assume pela sequencia: mede-se pelo efeito - LP do
+        oponente, cartas no campo dele, ou o bit de "pode agir" do atacante.
         """
         from . import state as _st
 
         self.close_overlay()
         antes = _st.read(self.bridge, self.domain)
-        podia = {r.card_id for r in antes.field if r.can_act}
-        chave = (antes.lp_opponent, len(antes.opponent_field), tuple(sorted(podia)))
 
-        alvos = {r.card_id for r in antes.field}
-        if not self.move_cursor_to_card(card_id, valid_ids=alvos):
+        def chave(s):
+            return (s.lp_opponent, s.lp_player,
+                    tuple(sorted(r.card_id for r in s.opponent_field)),
+                    tuple(sorted(r.card_id for r in s.field if r.can_act)))
+
+        k = chave(antes)
+        meus = {r.card_id for r in antes.field}
+        if not self.move_cursor_to_card(card_id, valid_ids=meus):
             return False
         self.confirm()
         self.wait_for_idle(stable_for=20)
-        self.confirm()
-        self.wait_for_idle(stable_for=40)
 
-        depois = _st.read(self.bridge, self.domain)
-        agora = {r.card_id for r in depois.field if r.can_act}
-        return (depois.lp_opponent, len(depois.opponent_field),
-                tuple(sorted(agora))) != chave
+        if target_card_id is not None:
+            inimigos = {r.card_id for r in antes.opponent_field}
+            # se nao achar o alvo, confirma mesmo assim: em ataque direto o
+            # jogo nao pede alvo nenhum
+            self.move_cursor_to_card(target_card_id, valid_ids=inimigos)
+        self.confirm()
+        self.wait_for_idle(stable_for=60)
+
+        return chave(_st.read(self.bridge, self.domain)) != k
 
     # ---------------------------------------------------------- fim de turno
 

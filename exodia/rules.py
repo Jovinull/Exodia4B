@@ -37,7 +37,8 @@ class Action:
         return self.label
 
 
-def legal_actions(state: GameState) -> list[Action]:
+def legal_actions(state: GameState,
+                  excluir: "set[int] | None" = None) -> list[Action]:
     acoes: list[Action] = []
 
     # --- invocar monstros da mao -------------------------------------------
@@ -62,17 +63,13 @@ def legal_actions(state: GameState) -> list[Action]:
             ))
 
     # --- atacar ------------------------------------------------------------
-    # O bit 0x4000 indica monstro que ainda pode agir, mas ele so aparece em
-    # certos momentos do nosso turno. Enquanto o fluxo de ataque nao esta
-    # confirmado, oferecem-se todos os monstros do campo e deixa-se o atuador
-    # medir se o ataque aconteceu de fato.
-    # Carta virada para baixo nao ataca, e monstro sem o bit de "pode agir"
-    # tambem nao. Aqui havia um fallback que oferecia todos os monstros quando
-    # nenhum tinha o bit: em 22 turnos ele gerou 38 ataques recusados seguidos,
-    # com o agente batendo na mesma porta o duelo inteiro. Acao que sempre
-    # falha nao pode entrar na lista.
+    # Carta virada para baixo nao ataca. Ja o bit 0x4000 NAO serve de filtro:
+    # medido, ele nao liga depois de invocar, nem em turnos seguintes, e usa-lo
+    # como condicao deixava o agente sem oferecer nenhum ataque o duelo
+    # inteiro. Quem evita a repeticao inutil agora e a memoria de turno do
+    # agente, que descarta o atacante que ja falhou.
     de_frente = [r for r in state.field if not r.face_down]
-    atacantes = [r for r in de_frente if r.can_act]
+    atacantes = [r for r in de_frente if r.card_id not in (excluir or ())]
     inimigos = state.opponent_field
     for a in atacantes:
         ca = cards.get(a.card_id)

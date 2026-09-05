@@ -108,18 +108,28 @@ class RandomAgent:
                 break
 
             r.turnos += 1
+            # memoria de turno: atacante que ja falhou sai da lista ate a
+            # proxima rodada, para o agente nao insistir na mesma jogada
+            falharam: set[int] = set()
             log(f"\n--- turno {t} --- LP {gs.lp_player} x {gs.lp_opponent} | "
                 f"mao {len(gs.hand)} campo {len(gs.field)} "
                 f"campo_op {len(gs.opponent_field)}")
 
             for _ in range(acoes_por_turno):
+                # Le o estado sempre na VISAO DE CAMPO. Com a mao aberta o bit
+                # de "pode agir" dos nossos monstros aparece zerado, e o
+                # resultado e um duelo inteiro sem nenhum ataque ser sequer
+                # oferecido.
+                self.act.close_overlay()
                 gs = st.read(self.bridge, self.domain)
-                acoes = legal_actions(gs)
+                acoes = legal_actions(gs, excluir=falharam)
                 # o fim de turno so entra no sorteio quando e a unica saida,
                 # senao o agente passa o turno o tempo todo e nada acontece
                 candidatas = [a for a in acoes if a.kind != "end_turn"] or acoes
                 escolha = self.rng.choice(candidatas)
                 ok = self.executar(escolha, gs)
+                if not ok and escolha.kind in ("attack", "attack_direct"):
+                    falharam.add(escolha.card_id)
                 r.registrar(escolha.kind, ok)
                 motivo = "" if ok else "  <- " + self.diagnostico(escolha, gs)
                 if not ok:

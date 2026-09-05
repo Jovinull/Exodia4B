@@ -74,8 +74,7 @@ def main() -> int:
             if monstros:
                 alvo = max(monstros, key=lambda r: r.attack)
                 nome = cards.name(alvo.card_id)
-                ok = act.summon(alvo.card_id,
-                                valid_ids={r.card_id for r in g.hand})
+                ok = act.summon(g.hand.index(alvo), alvo.card_id)
                 print(f"  invocar {nome}: {'OK' if ok else 'falhou'}")
                 invocou += ok
             else:

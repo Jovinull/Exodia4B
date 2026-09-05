@@ -104,11 +104,11 @@ def main() -> int:
             time.sleep(args.pausa)
 
             if escolha.kind == "summon":
-                ok = act.summon(escolha.card_id,
-                                valid_ids={r.card_id for r in g.hand},
+                ok = act.summon(escolha.hand_slot, escolha.card_id,
                                 guardian_star=escolha.guardian_star)
             elif escolha.kind in ("attack", "attack_direct"):
-                ok = act.attack(escolha.card_id, escolha.target_card_id)
+                ok = act.attack(escolha.field_slot, escolha.target_slot,
+                                escolha.card_id)
             else:
                 ok = act.end_turn()
             log(f"  resultado: {'ok' if ok else 'FALHOU'}")

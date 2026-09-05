@@ -78,8 +78,7 @@ def main() -> int:
             print(f"\n[{n}] invocando {c.short()}  ({estrelas})")
             print(f"    campo antes: {len(gs.field)}")
 
-            venceu = act.summon(alvo.card_id,
-                                valid_ids={r.card_id for r in mao},
+            venceu = act.summon(mao.index(alvo), alvo.card_id,
                                 guardian_star=args.star)
             depois = st.read(b, RAM)
             print(f"    campo depois: {len(depois.field)}  -> "

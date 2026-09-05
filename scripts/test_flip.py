@@ -73,8 +73,7 @@ def main() -> int:
             alvo = monstros[0]
 
             ok = act.summon(
-                alvo.card_id,
-                valid_ids={r.card_id for r in g.hand},
+                g.hand.index(alvo), alvo.card_id,
                 face_up=(seta != "nenhuma"),
                 flip_button=("right" if seta == "nenhuma" else seta),
             )

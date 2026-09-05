@@ -29,19 +29,24 @@ TYPE_NAMES = {
     20: "Magia", 21: "Armadilha", 22: "Ritual", 23: "Equipamento",
 }
 
-# ATENCAO: este mapeamento NAO esta verificado.
+# Nomes lidos DA TELA "ESCOLHA O ATRIBUTO", pareados com o indice do banco.
 #
-# Ponto de dado real coletado no jogo: a carta 134 (Mystical Capture Chain)
-# tem GuardianStarA=8 e GuardianStarB=6 no banco, e a tela "ESCOLHA O ATRIBUTO"
-# oferece, nessa ordem, "Sol" e "Netuno". Ou seja 8->Sol e 6->Netuno, o que NAO
-# bate com a ordem abaixo.
+# Cada entrada aqui e uma observacao direta, nao um palpite:
+#   carta 134 (A=8, B=6) -> a tela ofereceu "Sol" e depois "Netuno"
+#   carta 611 (A=9, B=3) -> a tela ofereceu "Lua" e depois "Saturno"
 #
-# Ate coletar mais pares (indice do banco -> nome na tela) invocando monstros
-# diferentes, trate esses nomes como provisorios e prefira exibir o INDICE.
-# O agente escolhe entre a estrela A e a B da carta, entao o nome e cosmetico.
-GUARDIAN_STARS_UNVERIFIED = {
-    0: "-", 1: "Mercurio", 2: "Sol", 3: "Lua", 4: "Venus", 5: "Marte",
-    6: "Jupiter", 7: "Saturno", 8: "Urano", 9: "Netuno", 10: "Plutao",
+# A tabela que estava aqui antes era uma ordem inventada (1=Mercurio, 2=Sol,
+# 3=Lua...) e nao bate com nenhuma dessas medicoes. Ela chegou a vazar para o
+# prompt, e o agente passou a justificar jogadas por nomes que o jogo nao usa.
+#
+# O resto so entra quando for lido na tela. Indice sem observacao fica de fora
+# de proposito: no jogo, o que importa e a vantagem entre estrelas, e um nome
+# errado sugere uma relacao que nao existe.
+GUARDIAN_STARS_OBSERVADOS = {
+    3: "Saturno",
+    6: "Netuno",
+    8: "Sol",
+    9: "Lua",
 }
 
 
@@ -56,7 +61,10 @@ def guardian_star_label(idx: int) -> str:
     Quando o mapeamento indice -> nome for verificado na tela, este e o unico
     lugar que muda.
     """
-    return "-" if idx == 0 else f"#{idx}"
+    if idx == 0:
+        return "-"
+    nome = GUARDIAN_STARS_OBSERVADOS.get(idx)
+    return f"#{idx} ({nome})" if nome else f"#{idx}"
 
 
 @dataclass(frozen=True)

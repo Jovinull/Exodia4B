@@ -25,6 +25,7 @@ class Resultado:
     acoes_ok: int = 0
     acoes_falhas: int = 0
     por_tipo: dict[str, list[int]] = field(default_factory=dict)
+    motivos: dict[str, int] = field(default_factory=dict)
     terminou: str = "limite de turnos"
 
     def registrar(self, kind: str, ok: bool) -> None:
@@ -41,6 +42,10 @@ class Resultado:
                   f"fim: {self.terminou}"]
         for kind, (ok, falhou) in sorted(self.por_tipo.items()):
             linhas.append(f"  {kind:15} {ok} ok / {falhou} falhas")
+        if self.motivos:
+            linhas.append("motivos das falhas:")
+            for m, n in sorted(self.motivos.items(), key=lambda x: -x[1]):
+                linhas.append(f"  {n:4}x  {m}")
         return "\n".join(linhas)
 
 
@@ -53,6 +58,30 @@ class RandomAgent:
         self.rng = random.Random(seed)
 
     # ------------------------------------------------------------ execucao
+
+    def diagnostico(self, a: Action, gs: st.GameState) -> str:
+        """Por que uma acao pode ter falhado, olhando o estado de antes.
+
+        Sem isto o log so diz FALHOU, e nao da para separar "o harness errou a
+        sequencia" de "o jogo recusou porque a jogada era ilegal".
+        """
+        if a.kind == "summon":
+            if len(gs.field) >= 5:
+                return "campo cheio"
+            return "sequencia de invocacao"
+        if a.kind in ("attack", "attack_direct"):
+            meu = [r for r in gs.field if r.card_id == a.card_id]
+            if not meu:
+                return "atacante nao esta no campo"
+            r = meu[0]
+            if r.face_down:
+                return "atacante virado para baixo"
+            if not r.can_act:
+                return "atacante sem bit de pode-agir (talvez ja atacou)"
+            return "sequencia de ataque"
+        if a.kind == "end_turn":
+            return "nada mudou no estado do oponente"
+        return "?"
 
     def executar(self, a: Action, gs: st.GameState) -> bool:
         if a.kind == "summon":
@@ -92,7 +121,12 @@ class RandomAgent:
                 escolha = self.rng.choice(candidatas)
                 ok = self.executar(escolha, gs)
                 r.registrar(escolha.kind, ok)
-                log(f"    {escolha.label[:58]:58} {'ok' if ok else 'FALHOU'}")
+                motivo = "" if ok else "  <- " + self.diagnostico(escolha, gs)
+                if not ok:
+                    r.motivos[self.diagnostico(escolha, gs)] = (
+                        r.motivos.get(self.diagnostico(escolha, gs), 0) + 1)
+                log(f"    {escolha.label[:52]:52} "
+                    f"{'ok' if ok else 'FALHOU'}{motivo}")
                 if escolha.kind == "end_turn":
                     break
             else:

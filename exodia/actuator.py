@@ -277,7 +277,22 @@ class Actuator:
                 self.bridge.press("down", 3)
                 self.bridge.frame_advance(self.settle_frames * 2)
             self.confirm()
-            self.wait_for_idle(stable_for=20)
+
+            # ESPERA O EFEITO antes de decidir apertar de novo.
+            #
+            # Sem isto o laco relia a RAM cedo demais, ainda no meio da
+            # animacao, concluia "a carta nao entrou" e mandava outro confirme.
+            # Sobravam DOIS confirmes: uma pessoa jogando usou 3 apos desvirar,
+            # o harness usava 5. E os dois que sobravam nao caiam no vazio -
+            # caiam ja na visao de campo, ABRINDO A MIRA DE ATAQUE. A invocacao
+            # terminava "certa" e o ataque seguinte comecava dessincronizado,
+            # o que fez o ataque a monstro falhar por sessoes inteiras.
+            esperou = 0
+            while esperou < 150:
+                self.bridge.frame_advance(self.settle_frames * 3)
+                esperou += self.settle_frames * 3
+                if contagem(_st.read(self.bridge, self.domain))[0] > campo_antes:
+                    return True
 
         campo_fim, _ = contagem(_st.read(self.bridge, self.domain))
         if campo_fim > campo_antes:
@@ -416,6 +431,11 @@ class Actuator:
         """
         from . import state as _st
 
+        # Espera a acao anterior terminar de verdade. A invocacao devolve assim
+        # que a RAM mostra a carta em campo, mas a animacao ainda esta rodando -
+        # e apertar no meio dela faz o cross ser engolido. Medido: com espera,
+        # o ataque sai; sem espera, o mesmo codigo falha sempre.
+        self.wait_for_idle(stable_for=60)
         antes = _st.read(self.bridge, self.domain)
 
         def chave(s):
@@ -424,38 +444,68 @@ class Actuator:
                     tuple(sorted(r.card_id for r in s.field if r.has_attacked)))
 
         k = chave(antes)
-
-        # PRIMEIRO passo, e o que faltava: o cursor precisa estar na fileira do
-        # NOSSO CAMPO. Antes, `attack()` chamava direto o move_cursor_to_slot,
-        # que encosta na borda esquerda da fileira ONDE O CURSOR JA ESTIVER - e
-        # no comeco do turno ele esta na MAO. O `cross` seguinte comecava a
-        # jogar uma carta da mao em vez de escolher o atacante, e o ataque nunca
-        # era declarado. Direto (sem alvo) funcionava por acidente.
-        if not self.ensure_field_view():
-            self.recover()
+        alvos = {r.card_id for r in antes.opponent_field}
+        if not alvos and target_slot is not None:
             return False
 
-        if not self.move_cursor_to_slot(field_slot):
-            self.recover()
-            return False
-        self.confirm()                       # escolhe o atacante
+        # O CAMPO E UMA TIRA HORIZONTAL UNICA.
+        #
+        # Isso e o que os screenshots de uma pessoa jogando mostraram, e muda
+        # tudo. Nao existem "duas fileiras" com o nosso campo de um lado e o do
+        # oponente do outro: existe uma faixa so, que rola para os lados. Os
+        # nossos monstros ficam a ESQUERDA, os do oponente a DIREITA, e no meio
+        # ha slots VAZIOS. Andar para a direita atravessa a faixa inteira.
+        #
+        # Duas consequencias que quebravam o ataque antes:
+        #
+        # 1. o numero de `right` ate o alvo e uma DISTANCIA, nao um indice -
+        #    depende de quantos slots vazios existem no meio;
+        # 2. `press_until_change` nao serve para andar aqui: passando por slot
+        #    vazio o SELECTED_CARD nao muda, e ela conclui que o cursor travou.
+        #    Por isso os apertos abaixo sao CRUS, e quem diz onde paramos e o
+        #    id sob o cursor.
+        self.confirm()                       # abre a mira, no nosso monstro
         self.wait_for_idle(stable_for=20)
 
-        # Escolhido o atacante, o jogo joga o cursor para o lado do oponente,
-        # ja pousado no primeiro monstro dele. Medido no log de uma pessoa
-        # jogando: com um alvo so, dois `right` a mais nao atrapalharam (batem
-        # na borda e param), e um ataque sem nenhum `right` acertou o primeiro
-        # monstro. Ou seja, `right` anda ENTRE os alvos - nao atravessa o campo.
+        # Caminha ate pousar num monstro do oponente. E uma busca semantica:
+        # nao se conta passos, olha-se onde o cursor esta.
+        achou = False
+        for _ in range(BOARD_SLOTS * 2 + 4):
+            if self.cursor_card() in alvos:
+                achou = True
+                break
+            self.bridge.press("right", 3)
+            # 20 frames, nao 8: com espera curta a leitura sai antes de o
+            # cursor assentar, o laco "nao ve" o alvo e passa direto por ele.
+            # Foi medido - com 8 frames a busca falhava sempre; com 20 acha.
+            self.bridge.frame_advance(20)
+        if not achou:
+            # nunca chegou no lado do oponente: a mira nao abriu, ou o cursor
+            # nao estava onde imaginavamos. Nao declara nada as cegas.
+            self.recover()
+            return False
+
+        # ja estamos no primeiro alvo; anda mais `target_slot` para escolher
+        # outro monstro dele
         for _ in range(target_slot or 0):
             self.bridge.press("right", 3)
             self.bridge.frame_advance(self.settle_frames * 2)
-        self.confirm()                       # declara
-        self.wait_for_idle(stable_for=60)
 
-        mudou = chave(_st.read(self.bridge, self.domain)) != k
-        if not mudou:
-            self.recover()
-        return mudou
+        self.confirm()                       # declara
+
+        # ESPERA o efeito aparecer, em vez de conferir uma vez so.
+        #
+        # O ataque tem animacao longa - o contador de LP desce aos poucos. Uma
+        # unica leitura logo depois do confirme pega o estado ANTES do dano, e
+        # o ataque e dado como falho tendo funcionado. Foi exatamente isso que
+        # aconteceu na primeira vez que a sequencia certa rodou: o LP do
+        # oponente caiu de 8000 para 7600 e o metodo devolveu False.
+        for _ in range(10):
+            self.wait_for_idle(stable_for=40)
+            if chave(_st.read(self.bridge, self.domain)) != k:
+                return True
+        self.recover()
+        return False
 
     # ---------------------------------------------------------- fim de turno
 

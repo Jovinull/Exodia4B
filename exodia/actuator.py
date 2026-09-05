@@ -284,7 +284,7 @@ class Actuator:
         def chave(s):
             return (s.lp_opponent, s.lp_player,
                     tuple(sorted(r.card_id for r in s.opponent_field)),
-                    tuple(sorted(r.card_id for r in s.field if r.can_act)))
+                    tuple(sorted(r.card_id for r in s.field if r.has_attacked)))
 
         k = chave(antes)
         meus = {r.card_id for r in antes.field}

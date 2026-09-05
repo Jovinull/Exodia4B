@@ -90,13 +90,16 @@ def main() -> int:
                     log(f"    {cards.name(r.card_id)[:26]:26} "
                         f"flags=0x{r.flags:04X}  "
                         f"{'DE COSTAS' if r.face_down else 'de frente'}  "
-                        f"{'pode agir' if r.can_act else 'NAO pode agir'}")
+                        f"{'ja atacou' if r.has_attacked else 'pode atacar'}")
 
             acoes = legal_actions(g)
             log(f"  {len(acoes)} acoes legais")
 
-            # prioriza invocar, que e o passo sob suspeita
-            escolha = next((a for a in acoes if a.kind == "summon"), acoes[0])
+            # prioriza ATACAR quando houver, senao invoca. Antes o script fazia
+            # uma acao e passava o turno, entao nunca chegava a atacar.
+            escolha = next((a for a in acoes if a.kind.startswith("attack")),
+                           None) or next(
+                (a for a in acoes if a.kind == "summon"), acoes[0])
             log(f"\n  >> vou executar: {escolha.label}")
             time.sleep(args.pausa)
 

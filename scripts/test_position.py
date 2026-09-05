@@ -100,7 +100,7 @@ def main() -> int:
             if posta:
                 r = posta[-1]
                 print(f"{v:>22}  {'sim':>8}  0x{r.flags:04X}  "
-                      f"{('SIM' if r.can_act else 'nao'):>10}")
+                      f"{('SIM' if r.has_attacked else 'nao'):>10}")
             else:
                 print(f"{v:>22}  {'nao':>8}  {'-':>7}  {'-':>10}")
             b.screenshot(str(out / f"{v}.png"))

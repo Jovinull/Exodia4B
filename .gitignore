@@ -1,0 +1,95 @@
+# ─────────────────────────────────────────────────────────────
+#  EXODIA-4B — .gitignore
+# ─────────────────────────────────────────────────────────────
+
+# Documentação e contexto privados do projeto
+Notes/
+
+# Skills e comandos locais do Claude Code
+.claude/skills/
+.claude/commands/
+.claude/settings.local.json
+
+# ── Jogo e BIOS: NUNCA versionar ─────────────────────────────
+# NOTA: colchetes sao classe de caracteres no gitignore -> precisam de escape
+\[PS1\]_*/
+\[SLUS*\]_*/
+*.bin
+*.BIN
+*.cue
+*.img
+*.sub
+*.ccd
+# BIOS do PS1 (explícito, independente de case)
+SCPH*.bin
+SCPH*.BIN
+SCPH*.bin.*
+ps-*.bin
+Firmware/
+firmware/
+*.iso
+*.chd
+*.pbp
+*.gba
+*.gb
+*.gbc
+*.nds
+bios/
+roms/
+
+# ── Emulador ─────────────────────────────────────────────────
+*.State
+*.state
+savestates/
+BizHawk/
+EmuHawk/
+*.SaveRAM
+*.mcr
+
+# ── Modelos de IA (pesados) ──────────────────────────────────
+*.gguf
+*.safetensors
+*.bin.gz
+models/
+
+# ── Saída de execução ────────────────────────────────────────
+runs/
+logs/
+*.jsonl
+highlights.json
+screenshots/
+recordings/
+*.mkv
+*.mp4
+*.flv
+
+# ── Python ───────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ── Ambiente / segredos ──────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Editores e SO ────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+Desktop.ini
+
+# Ferramentas baixadas e ambiente
+tools/
+.venv/
+
+# Dados de terceiros baixados (ver exodia/cards.py para refazer o download)
+data/raw/

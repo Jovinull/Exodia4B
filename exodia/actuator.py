@@ -210,11 +210,12 @@ class Actuator:
 
         self.wait_for_idle()
 
-        # Garante a visao da mao: sem isso o cursor pode pousar no CAMPO, e o
-        # confirmar abre a escolha de alvo de ataque em vez de invocar.
-        self.close_overlay()
-        self.open_hand()
-        self.wait_for_idle(stable_for=20)
+        # Garante a visao da mao CONFERINDO, nao apertando Start no escuro:
+        # sem isso o cursor pode pousar no CAMPO, e o confirmar abre a escolha
+        # de alvo de ataque em vez de invocar.
+        if not self.ensure_hand_view():
+            self.recover()
+            return False
 
         if not self.move_cursor_to_slot(hand_slot):
             self.recover()
@@ -276,65 +277,67 @@ class Actuator:
         self.recover()
         return False
 
-    # ---------------------------------------------------------- sobreposicao
+    # ------------------------------------------------------- em que tela estou
 
-    def overlay_open(self) -> bool:
-        """True enquanto houver visao de mao ou prompt na tela."""
-        from .state import OVERLAY_OPEN
-        return bool(self.bridge.read_u8(OVERLAY_OPEN, self.domain))
+    # NAO EXISTE flag de "menu aberto" na RAM mapeada. O endereco que ocupava
+    # esse papel (0x8009B0AC) e um bit de PARIDADE DE FRAME: alterna 1,0,1,0 a
+    # cada frame, e so parecia estavel porque as leituras vinham de 4 em 4
+    # frames - um aliasing perfeito. Ver a nota longa em state.py.
+    #
+    # O prejuizo nao era so ruido. `close_overlay()` decidia apertar START com
+    # base nesse bit, e START na visao de campo ENCERRA O TURNO. Metade das
+    # vezes, o harness passava o proprio turno no meio de uma jogada. Era essa
+    # a causa das invocacoes e ataques que falhavam "sem motivo".
+    #
+    # A substituicao segue o mesmo caminho que resolveu o cursor: em vez de
+    # procurar o endereco certo, PERGUNTAR AO JOGO. A pergunta "o cursor esta
+    # sobre uma carta da minha mao?" se responde com dados que ja sao
+    # confiaveis - o array de registros e o card id sob o cursor.
 
-    def wait_overlay_closed(self, timeout_frames: int | None = None) -> bool:
-        """Espera voltar para a visao de campo limpa."""
-        from .state import OVERLAY_OPEN
-        budget = timeout_frames or self.max_wait_frames
-        waited = 0
-        while waited < budget:
-            if not self.bridge.read_u8(OVERLAY_OPEN, self.domain):
-                return True
-            self.bridge.frame_advance(self.settle_frames)
-            waited += self.settle_frames
-        return False
+    def hand_ids(self) -> set[int]:
+        from . import state as _st
+        return {r.card_id for r in _st.read(self.bridge, self.domain).hand}
 
-    def recover(self) -> bool:
-        """Volta a um estado conhecido: visao de campo, sem menu aberto.
+    def cursor_on_hand(self) -> bool:
+        """O cursor esta sobre uma carta da nossa mao?
 
-        Toda rotina que abre menu chama isto no caminho de FALHA. Sem isso a
-        sobreposicao fica aberta e contamina a proxima acao - foi o que
-        prendeu o agente numa carta da mao quando o campo encheu: a invocacao
-        falhava, a mao continuava aberta, e ele nao chegava a decidir atacar.
-
-        Devolve False quando nao conseguiu voltar. Isso NAO deve ser
-        silencioso: quem chama precisa registrar, porque significa que o jogo
-        ficou num estado que o harness nao sabe desfazer.
+        E uma pergunta com resposta imperfeita: se a mesma carta estiver na mao
+        e no campo, os dois casos dao True. Ainda assim e infinitamente melhor
+        que o bit de paridade, porque erra so numa coincidencia especifica, e
+        nao em metade das leituras.
         """
-        self.wait_for_idle(stable_for=20)
-        if self.close_overlay():
-            return True
-        # ultimo recurso: deixa a animacao terminar e tenta mais uma rodada,
-        # comecando pelo Start, que e quem fecha a visao da mao
-        self.bridge.frame_advance(self.settle_frames * 10)
-        self.bridge.press("start", 4)
-        self.wait_for_idle(stable_for=20)
-        return self.close_overlay()
+        return self.cursor_card() in self.hand_ids()
 
-    def close_overlay(self, tries: int = 3) -> bool:
-        """Sai da visao da mao ou de um prompt ate chegar na visao de campo.
+    def ensure_hand_view(self, tries: int = 3) -> bool:
+        """Garante que a mao esta aberta, CONFERINDO em vez de supor.
 
-        Alterna CANCELAR e START porque os dois fecham coisas diferentes:
-        cancelar sai de um prompt, mas quem abre a visao da mao e o Start, e
-        nesse caso e ele que fecha. Tentar so cancelar deixava a mao aberta, o
-        agente preso numa carta, e ainda queimava frames tentando de novo -
-        era a demora visivel entre uma acao e outra.
+        START alterna entre as visoes, entao apertar as cegas tanto abre quanto
+        fecha. Aqui cada aperto e seguido de uma verificacao; sem ela, uma
+        invocacao pode comecar com o cursor no campo, e o confirmar abre a
+        escolha de alvo de ataque em vez de invocar.
         """
-        for i in range(tries):
-            if not self.overlay_open():
-                return True
-            if i % 2 == 0:
-                self.cancel()
-            else:
-                self.bridge.press("start", 4)
+        for _ in range(tries):
             self.wait_for_idle(stable_for=20)
-        return not self.overlay_open()
+            if self.cursor_on_hand():
+                return True
+            self.bridge.press("start", 4)
+            self.bridge.frame_advance(self.settle_frames * 6)
+        self.wait_for_idle(stable_for=20)
+        return self.cursor_on_hand()
+
+    def recover(self, tries: int = 3) -> bool:
+        """Volta a um estado conhecido depois de uma sequencia que falhou.
+
+        So usa CANCELAR. Cancelar sai de prompt e nao tem efeito de jogo - no
+        pior caso nao faz nada. START faria o servico em algumas telas e
+        ENCERRARIA O TURNO em outra, e nao ha como saber em qual estamos: e
+        exatamente a aposta que quebrou o agente. Entre uma recuperacao
+        incompleta e um turno perdido, a incompleta e barata.
+        """
+        for _ in range(tries):
+            self.cancel()
+            self.wait_for_idle(stable_for=20)
+        return True
 
     # ------------------------------------------------------------- ataque
 
@@ -357,7 +360,6 @@ class Actuator:
         """
         from . import state as _st
 
-        self.close_overlay()
         antes = _st.read(self.bridge, self.domain)
 
         def chave(s):
@@ -389,36 +391,37 @@ class Actuator:
 
     # ---------------------------------------------------------- fim de turno
 
-    def end_turn(self) -> bool:
+    def end_turn(self, max_presses: int = 3) -> bool:
         """Encerra o turno.
 
-        Start so encerra o turno na VISAO DE CAMPO. Com a mao aberta ele apenas
-        alterna a visao, o que por muito tempo pareceu "Start nao faz nada".
-        Por isso fecha-se a sobreposicao antes.
+        START so encerra o turno numa das visoes; nas outras ele apenas troca
+        de visao. Antes, o harness tentava adivinhar em qual estava, apertava
+        uma vez e desistia - e o `end_turn` "falhava" tendo apenas trocado a
+        camera de lugar.
 
-        Devolve True se o estado do duelo mudou depois disso - normalmente
-        porque o oponente jogou.
+        Agora nao adivinha: aperta, mede, e aperta de novo se nada aconteceu.
+        Como cada aperto avanca o ciclo de visoes, em poucas tentativas um
+        deles cai na tela onde START encerra mesmo. O criterio de sucesso e o
+        efeito no duelo - o oponente jogar - nunca a sequencia de botoes.
         """
         from . import state as _st
 
-        self.close_overlay()
-        antes = _st.read(self.bridge, self.domain)
-
         def chave(s):
-            # inclui o campo do oponente carta a carta: ele pode trocar um
+            # o campo do oponente entra carta a carta: ele pode trocar um
             # monstro por outro sem mudar a contagem
             return (s.lp_player, s.lp_opponent, len(s.hand),
                     s.opponent_hand_size,
                     tuple(sorted(r.card_id for r in s.opponent_field)))
 
-        k = chave(antes)
-        self.bridge.press("start", 4)
+        k = chave(_st.read(self.bridge, self.domain))
 
-        # O turno do oponente inclui compra, jogada e as vezes um ataque com
-        # animacao inteira. Esperar pouco fazia o fim de turno ser dado como
-        # falho mesmo tendo funcionado.
-        for _ in range(8):
-            self.wait_for_idle(stable_for=40)
-            if chave(_st.read(self.bridge, self.domain)) != k:
-                return True
+        for _ in range(max_presses):
+            self.bridge.press("start", 4)
+            # O turno do oponente inclui compra, jogada e as vezes um ataque
+            # com animacao inteira. Esperar pouco dava o fim de turno como
+            # falho mesmo tendo funcionado.
+            for _ in range(6):
+                self.wait_for_idle(stable_for=40)
+                if chave(_st.read(self.bridge, self.domain)) != k:
+                    return True
         return False

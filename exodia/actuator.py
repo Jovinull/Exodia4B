@@ -333,7 +333,7 @@ class Actuator:
         """
         return self.cursor_card() in self.hand_ids()
 
-    def ensure_hand_view(self, tries: int = 3) -> bool:
+    def ensure_hand_view(self, tries: int = 4) -> bool:
         """Confere que o cursor esta na nossa mao, sem apertar START.
 
         NAO EXISTE "abrir a mao". No nosso turno a mao ja esta selecionavel: e
@@ -351,13 +351,21 @@ class Actuator:
         cursor com um LEFT, que e inofensivo, em vez de apertar um botao que
         tem efeito de jogo.
         """
-        for _ in range(tries):
+        for i in range(tries):
             self.wait_for_idle(stable_for=40)
             if self.cursor_on_hand():
                 return True
-            # LEFT so move o cursor; no pior caso ele ja estava na borda e nada
-            # acontece. Serve para forcar SELECTED_CARD a se atualizar.
-            self.press_until_change("left", SELECTED_CARD)
+            if i % 2 == 0:
+                # CANCELAR sai da grade de campo, que e onde o jogo fica depois
+                # de um ataque. Sem isto, a acao seguinte comeca com o cursor no
+                # campo e a invocacao falha - era o padrao "a primeira acao do
+                # turno funciona, as seguintes nao". Cancelar nao tem efeito de
+                # jogo: no pior caso nao faz nada.
+                self.cancel()
+            else:
+                # LEFT so move o cursor; no pior caso ele ja estava na borda.
+                # Serve para forcar SELECTED_CARD a se atualizar.
+                self.press_until_change("left", SELECTED_CARD)
         return self.cursor_on_hand()
 
     def cursor_on_our_field(self) -> bool:

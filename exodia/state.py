@@ -80,7 +80,12 @@ FLAG_OPPONENT = 0x2000
 # invocar sem apertar nada termina em 0x9000. Uma carta de costas nao ataca.
 FLAG_FACE_DOWN = 0x1000
 FLAG_ON_FIELD_OPPONENT = 0x1000   # do lado do oponente o mesmo bit marca campo
-FLAG_CAN_ACT = 0x4000      # visto nos NOSSOS monstros durante o nosso turno
+# 0x4000 significa "JA ATACOU neste turno", e nao "pode agir".
+# Medido no log de uma pessoa jogando: logo apos invocar o monstro esta em
+# 0x8000; depois de ele declarar ataque passa a 0xC000; e volta a 0x8000 no
+# comeco do turno seguinte. Eu tinha lido esse bit ao contrario, e por isso o
+# filtro de acoes excluia justamente os monstros que podiam atacar.
+FLAG_HAS_ATTACKED = 0x4000
 FLAG_EXTRA_0400 = 0x0400   # acompanha 0x4000 as vezes; significado incerto
 
 # Layout do array, deduzido observando uma pessoa jogar um duelo inteiro:
@@ -143,9 +148,15 @@ class CardInRecord:
         return self.index > PLAYER_HAND_MAX
 
     @property
-    def can_act(self) -> bool:
-        """Nosso monstro que ainda pode agir neste turno (bit 0x4000)."""
-        return bool(self.flags & FLAG_CAN_ACT)
+    def has_attacked(self) -> bool:
+        """Nosso monstro que ja declarou ataque neste turno."""
+        return bool(self.flags & FLAG_HAS_ATTACKED)
+
+    @property
+    def can_attack(self) -> bool:
+        """Pode declarar ataque: em campo, de frente e ainda nao atacou."""
+        return (self.on_field and not self.is_opponent
+                and not self.face_down and not self.has_attacked)
 
     @property
     def face_down(self) -> bool:

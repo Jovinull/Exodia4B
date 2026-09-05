@@ -41,27 +41,26 @@ SELECTED_CARD = 0x8009B338    # u16 - card id sob o cursor
 VIEW_FLAG = 0x8009B1D5        # u8  - muda ao abrir a mao com Start
 FUSION_RESULT = 0x800EA118    # u16 - resultado da ultima fusao
 
-# Flags do registro de 28 bytes. Estado do conhecimento, medido:
+# Flags do registro de 28 bytes, confirmadas contra a tela:
 #
-#   0x2000  carta do OPONENTE. So apareceu do lado do oponente, em 7 amostras
-#           de tipos diferentes (Magia, Maquina, Terra). E o bit confiavel.
-#   0x1000  em campo (provavel). Observado no monstro de 250 ATK do oponente
-#           que atacou, e o dano recebido bateu com o ATK dele.
-#   0x8000  significado AINDA NAO RESOLVIDO. Aparece na maioria das cartas dos
-#           dois lados, mas o Raigeki na nossa mao tem 0x0000 enquanto o
-#           Sparks (tambem Magia) na mao do oponente tem 0x8000. Ou seja,
-#           NAO e "e monstro" nem "esta viva". Nao use como filtro.
+#   0x8000  carta ATIVA (na mao ou em campo). Confirmado por screenshot: no
+#           inicio do duelo o registro do Raigeki tem 0x0000 e ele de fato NAO
+#           aparece na mao; as outras cinco cartas tem 0x8000 e sao exatamente
+#           as cinco desenhadas na tela.
+#   0x2000  carta do OPONENTE. So apareceu do lado do oponente, em amostras de
+#           tipos diferentes (Magia, Maquina, Terra).
+#   0x1000  em campo. Observado no monstro de 250 ATK do oponente que atacou,
+#           e o dano recebido bateu com o ATK dele.
 #   0x0400  "monstro em campo" segundo o fonte da recompilacao; nunca foi
 #           observado ligado aqui. Nao confiar.
 #
-# Por isso a presenca de uma carta e decidida pelo ID valido e pelo INTERVALO
-# DE INDICE, nao pelo bit 0x8000:
+# O intervalo de indice serve de sanidade extra, nao de criterio principal:
 #   indices  0..14  = jogador
 #   indices 15..29  = oponente
 #   indices 30+     = lixo/memoria nao inicializada (aparece "Blue-eyes" id=1)
+FLAG_ACTIVE = 0x8000
 FLAG_OPPONENT = 0x2000
 FLAG_ON_FIELD = 0x1000
-FLAG_UNKNOWN_8000 = 0x8000
 
 PLAYER_INDEX_MAX = 14
 LAST_VALID_INDEX = 29
@@ -87,11 +86,9 @@ class CardInRecord:
 
     @property
     def live(self) -> bool:
-        """Carta real, e nao lixo de memoria.
-
-        Nao usa o bit 0x8000: ele nao significa "viva" (ver nota nas flags).
-        """
-        return (1 <= self.card_id <= MAX_CARD_ID
+        """Carta ativa: esta na mao ou em campo, e nao e lixo de memoria."""
+        return (bool(self.flags & FLAG_ACTIVE)
+                and 1 <= self.card_id <= MAX_CARD_ID
                 and self.index <= LAST_VALID_INDEX)
 
     @property

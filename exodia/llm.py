@@ -89,7 +89,12 @@ class LLMClient:
     modelo: str = DEFAULT_MODEL
     host: str = DEFAULT_HOST
     num_thread: int | None = None
-    num_ctx: int = 4096
+    # 2048 e medido, nao chutado: o maior prompt real observado tem ~840
+    # tokens (estado + historico + 20 notas + acoes legais) e a resposta fica
+    # em ~60. O dobro disso da folga de sobra. Baixar de 4096 para 2048 tira
+    # ~0,3 GB do KV cache - e nesta maquina, com OBS gravando, 0,3 GB nao e
+    # detalhe: e a diferenca entre caber e paginar.
+    num_ctx: int = 2048
     num_predict: int = 256
     temperature: float = 0.4
     think: bool = False

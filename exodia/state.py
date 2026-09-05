@@ -41,20 +41,31 @@ SELECTED_CARD = 0x8009B338    # u16 - card id sob o cursor
 VIEW_FLAG = 0x8009B1D5        # u8  - muda ao abrir a mao com Start
 FUSION_RESULT = 0x800EA118    # u16 - resultado da ultima fusao
 
-# flags do registro de 28 bytes (decifradas ao vivo)
+# Flags do registro de 28 bytes. Estado do conhecimento, medido:
 #
-#   0x8000  carta viva
-#   0x2000  a carta e do OPONENTE   <- descoberto nesta sessao
-#   0x1000  provavelmente "em campo" (observado no monstro que atacou)
-#   0x0400  "monstro em campo" segundo o fonte da recompilacao;
-#           ainda nao observado ligado - confirmar (V4)
+#   0x2000  carta do OPONENTE. So apareceu do lado do oponente, em 7 amostras
+#           de tipos diferentes (Magia, Maquina, Terra). E o bit confiavel.
+#   0x1000  em campo (provavel). Observado no monstro de 250 ATK do oponente
+#           que atacou, e o dano recebido bateu com o ATK dele.
+#   0x8000  significado AINDA NAO RESOLVIDO. Aparece na maioria das cartas dos
+#           dois lados, mas o Raigeki na nossa mao tem 0x0000 enquanto o
+#           Sparks (tambem Magia) na mao do oponente tem 0x8000. Ou seja,
+#           NAO e "e monstro" nem "esta viva". Nao use como filtro.
+#   0x0400  "monstro em campo" segundo o fonte da recompilacao; nunca foi
+#           observado ligado aqui. Nao confiar.
 #
-# Layout observado do array: indices 0..14 = jogador, 15..29 = oponente.
-# Prefira o BIT 0x2000 ao intervalo de indice: e mais robusto.
-FLAG_LIVE = 0x8000
+# Por isso a presenca de uma carta e decidida pelo ID valido e pelo INTERVALO
+# DE INDICE, nao pelo bit 0x8000:
+#   indices  0..14  = jogador
+#   indices 15..29  = oponente
+#   indices 30+     = lixo/memoria nao inicializada (aparece "Blue-eyes" id=1)
 FLAG_OPPONENT = 0x2000
 FLAG_ON_FIELD = 0x1000
-FLAG_FIELD_RECOMP = 0x0400
+FLAG_UNKNOWN_8000 = 0x8000
+
+PLAYER_INDEX_MAX = 14
+LAST_VALID_INDEX = 29
+MAX_CARD_ID = 722
 
 # Offsets ainda NAO identificados dentro do registro de 28 bytes:
 #   +6, +8, +14..19  -> zerados enquanto a carta esta na mao.
@@ -76,15 +87,20 @@ class CardInRecord:
 
     @property
     def live(self) -> bool:
-        return bool(self.flags & FLAG_LIVE)
+        """Carta real, e nao lixo de memoria.
+
+        Nao usa o bit 0x8000: ele nao significa "viva" (ver nota nas flags).
+        """
+        return (1 <= self.card_id <= MAX_CARD_ID
+                and self.index <= LAST_VALID_INDEX)
 
     @property
     def is_opponent(self) -> bool:
-        return bool(self.flags & FLAG_OPPONENT)
+        return bool(self.flags & FLAG_OPPONENT) or self.index > PLAYER_INDEX_MAX
 
     @property
     def on_field(self) -> bool:
-        return bool(self.flags & (FLAG_ON_FIELD | FLAG_FIELD_RECOMP))
+        return bool(self.flags & FLAG_ON_FIELD)
 
     def describe(self) -> str:
         c = cards.get(self.card_id)
@@ -173,7 +189,10 @@ def read(bridge: Bridge, domain: str = "MainRAM") -> GameState:
         slot, = struct.unpack_from("<H", rec, 12)
         if cid == 0 and flags == 0 and atk == 0:
             continue
-        records.append(CardInRecord(i, cid, atk, dfs, flags, slot, rec))
+        r = CardInRecord(i, cid, atk, dfs, flags, slot, rec)
+        if not r.live:
+            continue          # indices 30+ trazem memoria nao inicializada
+        records.append(r)
 
     return GameState(
         lp_player=bridge.read_u16(LP_PLAYER, domain),

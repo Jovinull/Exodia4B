@@ -145,7 +145,8 @@ class Actuator:
     # ------------------------------------------------------------- invocacao
 
     def summon(self, card_id: int, valid_ids: "set[int] | None" = None,
-               guardian_star: str = "a", slot_moves: int = 0) -> bool:
+               guardian_star: str = "a", slot_moves: int = 0,
+               max_prompts: int = 5) -> bool:
         """Invoca uma carta da mao. Devolve True se ela chegou ao campo.
 
         Fluxo do jogo, mapeado por screenshot:
@@ -167,35 +168,37 @@ class Actuator:
         if not self.move_cursor_to_card(card_id, valid_ids=valid_ids):
             return False
 
-        antes = len(_st.read(self.bridge, self.domain).field)
-
-        self.confirm()                      # 1. seleciona a carta
+        self.confirm()                       # seleciona a carta
         self.wait_for_idle(stable_for=20)
 
-        for _ in range(slot_moves):         # 2. desloca o slot, se pedido
+        for _ in range(slot_moves):          # desloca o slot, se pedido
             self.bridge.press("right", 3)
             self.bridge.frame_advance(self.settle_frames * 2)
-        self.confirm()                      # confirma o slot
-        self.wait_for_idle(stable_for=20)
 
-        if guardian_star.lower() == "b":    # 3. escolhe a estrela
-            self.bridge.press("down", 3)
-            self.bridge.frame_advance(self.settle_frames * 2)
-        self.confirm()
-        self.wait_for_idle(stable_for=30)
-
-        # Criterio de sucesso semantico: a carta saiu da mao E esta no campo.
+        # Daqui em diante o numero de prompts NAO e fixo. Confirmar tres vezes
+        # as cegas dessincroniza: se o jogo pedir um passo a menos, o confirme
+        # sobrando comeca a colocar a proxima carta, e o duelo fica preso num
+        # prompt de escolha de slot que nenhum outro botao resolve.
         #
-        # Contar so o tamanho do campo nao serve, porque a flag de campo liga
-        # assim que a carta e POSICIONADA, antes de a guardian star ser
-        # escolhida - o que dava a invocacao como pronta com o prompt ainda
-        # aberto. Checar a sobreposicao tambem nao serve, porque depois de
-        # invocar o jogo volta para a visao da mao, e a sobreposicao continua
-        # legitimamente aberta.
-        depois = _st.read(self.bridge, self.domain)
-        no_campo = any(r.card_id == card_id for r in depois.field)
-        saiu_da_mao = not any(r.card_id == card_id for r in depois.hand)
-        return no_campo and saiu_da_mao and len(depois.field) > antes
+        # Por isso o laco olha o ESTADO a cada volta e decide o que fazer:
+        #   carta no campo e fora da mao  -> terminou
+        #   carta no campo e ainda na mao -> e o prompt da guardian star
+        #   nenhum dos dois               -> ainda falta confirmar posicao
+        for _ in range(max_prompts):
+            s = _st.read(self.bridge, self.domain)
+            no_campo = any(r.card_id == card_id for r in s.field)
+            na_mao = any(r.card_id == card_id for r in s.hand)
+            if no_campo and not na_mao:
+                return True
+            if no_campo and na_mao and guardian_star.lower() == "b":
+                self.bridge.press("down", 3)
+                self.bridge.frame_advance(self.settle_frames * 2)
+            self.confirm()
+            self.wait_for_idle(stable_for=20)
+
+        s = _st.read(self.bridge, self.domain)
+        return (any(r.card_id == card_id for r in s.field)
+                and not any(r.card_id == card_id for r in s.hand))
 
     # ---------------------------------------------------------- sobreposicao
 
@@ -215,3 +218,38 @@ class Actuator:
             self.bridge.frame_advance(self.settle_frames)
             waited += self.settle_frames
         return False
+
+    def close_overlay(self, tries: int = 4) -> bool:
+        """Sai da visao da mao ou de um prompt ate chegar na visao de campo."""
+        for _ in range(tries):
+            if not self.overlay_open():
+                return True
+            self.cancel()
+            self.wait_for_idle(stable_for=20)
+        return not self.overlay_open()
+
+    # ---------------------------------------------------------- fim de turno
+
+    def end_turn(self) -> bool:
+        """Encerra o turno.
+
+        Start so encerra o turno na VISAO DE CAMPO. Com a mao aberta ele apenas
+        alterna a visao, o que por muito tempo pareceu "Start nao faz nada".
+        Por isso fecha-se a sobreposicao antes.
+
+        Devolve True se o estado do duelo mudou depois disso - normalmente
+        porque o oponente jogou.
+        """
+        from . import state as _st
+
+        self.close_overlay()
+        antes = _st.read(self.bridge, self.domain)
+        chave_antes = (antes.lp_player, antes.lp_opponent,
+                       len(antes.hand), len(antes.opponent_field))
+
+        self.bridge.press("start", 4)
+        self.wait_for_idle(stable_for=40)
+
+        depois = _st.read(self.bridge, self.domain)
+        return (depois.lp_player, depois.lp_opponent,
+                len(depois.hand), len(depois.opponent_field)) != chave_antes

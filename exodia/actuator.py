@@ -178,10 +178,12 @@ class Actuator:
         self.bridge.press("circle", 3)
         self.bridge.frame_advance(self.settle_frames * 2)
 
-    def open_hand(self) -> None:
-        """Start abre a visao da mao durante o duelo."""
-        self.bridge.press("start", 4)
-        self.bridge.frame_advance(self.settle_frames * 6)
+    # open_hand() foi removido. Ele apertava START achando que abria a visao da
+    # mao; medido, START ENCERRA O TURNO. Quem precisa da mao usa
+    # ensure_hand_view(), que so confere e nunca aperta botao com efeito de
+    # jogo. O nome antigo fica citado aqui de proposito: a ideia de que "Start
+    # abre a mao" aparece em varias fontes externas sobre este jogo e nao vale
+    # para esta versao.
 
     # ------------------------------------------------------------- invocacao
 
@@ -317,20 +319,30 @@ class Actuator:
         return self.cursor_card() in self.hand_ids()
 
     def ensure_hand_view(self, tries: int = 3) -> bool:
-        """Garante que a mao esta aberta, CONFERINDO em vez de supor.
+        """Confere que o cursor esta na nossa mao, sem apertar START.
 
-        START alterna entre as visoes, entao apertar as cegas tanto abre quanto
-        fecha. Aqui cada aperto e seguido de uma verificacao; sem ela, uma
-        invocacao pode comecar com o cursor no campo, e o confirmar abre a
-        escolha de alvo de ataque em vez de invocar.
+        NAO EXISTE "abrir a mao". No nosso turno a mao ja esta selecionavel: e
+        a tela em que o duelo comeca. START nao abre nada - START ENCERRA O
+        TURNO. A versao anterior desta funcao apertava START quando achava que
+        a mao estava fechada, e o efeito era comico de tao ruim: o harness
+        passava o turno, o oponente jogava, compravamos uma carta, e so entao a
+        invocacao acontecia. Era isso, e nao uma regra do jogo, que produzia o
+        padrao de "uma invocacao por turno".
+
+        O falso negativo que disparava tudo isso: logo depois de carregar um
+        savestate, SELECTED_CARD ainda mostra a carta de uma animacao anterior
+        - normalmente um monstro do oponente. Nao e o cursor estar no lugar
+        errado, e a leitura estar velha. A cura e esperar assentar e cutucar o
+        cursor com um LEFT, que e inofensivo, em vez de apertar um botao que
+        tem efeito de jogo.
         """
         for _ in range(tries):
-            self.wait_for_idle(stable_for=20)
+            self.wait_for_idle(stable_for=40)
             if self.cursor_on_hand():
                 return True
-            self.bridge.press("start", 4)
-            self.bridge.frame_advance(self.settle_frames * 6)
-        self.wait_for_idle(stable_for=20)
+            # LEFT so move o cursor; no pior caso ele ja estava na borda e nada
+            # acontece. Serve para forcar SELECTED_CARD a se atualizar.
+            self.press_until_change("left", SELECTED_CARD)
         return self.cursor_on_hand()
 
     def recover(self, tries: int = 3) -> bool:

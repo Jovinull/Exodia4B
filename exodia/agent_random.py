@@ -74,10 +74,9 @@ class RandomAgent:
                 return "campo cheio"
             return "sequencia de invocacao"
         if a.kind in ("attack", "attack_direct"):
-            meu = [r for r in gs.field if r.card_id == a.card_id]
-            if not meu:
+            if a.field_slot is None or a.field_slot >= len(gs.field):
                 return "atacante nao esta no campo"
-            r = meu[0]
+            r = gs.field[a.field_slot]
             if r.face_down:
                 return "atacante virado para baixo"
             if r.has_attacked:
@@ -89,13 +88,10 @@ class RandomAgent:
 
     def executar(self, a: Action, gs: st.GameState) -> bool:
         if a.kind == "summon":
-            return self.act.summon(
-                a.card_id,
-                valid_ids={r.card_id for r in gs.hand},
-                guardian_star=a.guardian_star,
-            )
+            return self.act.summon(a.hand_slot, a.card_id,
+                                   guardian_star=a.guardian_star)
         if a.kind in ("attack", "attack_direct"):
-            return self.act.attack(a.card_id, a.target_card_id)
+            return self.act.attack(a.field_slot, a.target_slot, a.card_id)
         if a.kind == "end_turn":
             return self.act.end_turn()
         return False
@@ -133,7 +129,7 @@ class RandomAgent:
                 escolha = self.rng.choice(candidatas)
                 ok = self.executar(escolha, gs)
                 if not ok and escolha.kind in ("attack", "attack_direct"):
-                    falharam.add(escolha.card_id)
+                    falharam.add(escolha.field_slot)
 
                 # Rede de seguranca, NAO um remendo: depois de qualquer acao o
                 # jogo tem que estar de volta na visao de campo. Se nao estiver,

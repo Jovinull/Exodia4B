@@ -41,6 +41,15 @@ SELECTED_CARD = 0x8009B338    # u16 - card id sob o cursor
 VIEW_FLAG = 0x8009B1D5        # u8  - muda ao abrir a mao com Start
 FUSION_RESULT = 0x800EA118    # u16 - resultado da ultima fusao
 
+# u8: 1 = ha uma sobreposicao aberta (visao da mao, prompt de atributo);
+#     0 = visao de campo limpa, o jogo esta esperando uma acao nova.
+# Achado por diff de RAM entre a tela de atributo e a tela de campo, e
+# confirmado em 5 savestates diferentes. E o sinal que diz quando uma sequencia
+# de menu terminou de verdade - sem ele o harness acha que a invocacao acabou
+# enquanto o jogo ainda espera a escolha da guardian star.
+OVERLAY_OPEN = 0x8009B0AC
+OVERLAY_OPEN_ALT = 0x8009B124   # acompanhou 0x8009B0AC em todas as amostras
+
 # Flags do registro de 28 bytes, confirmadas contra a tela:
 #
 #   0x8000  carta ATIVA (na mao ou em campo). Confirmado por screenshot: no
